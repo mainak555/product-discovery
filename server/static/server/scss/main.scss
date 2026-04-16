@@ -86,8 +86,11 @@ a:hover { text-decoration: underline; }
 }
 
 .sidebar__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: $space-sm $space-lg;
-  cursor: pointer;
+  cursor: default;
   border-left: 3px solid transparent;
   transition: background 0.15s, border-color 0.15s;
 
@@ -98,8 +101,32 @@ a:hover { text-decoration: underline; }
 }
 
 .sidebar__name {
+  flex: 1;
   font-size: $font-size-base;
   font-weight: 500;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar__delete {
+  flex-shrink: 0;
+  margin-left: $space-sm;
+  background: none;
+  border: none;
+  color: $color-text-muted;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: $radius;
+  transition: color 0.15s, background 0.15s;
+
+  &:hover {
+    color: $color-error;
+    background: lighten($color-error, 38%);
+  }
 }
 
 .sidebar__empty {
@@ -432,4 +459,272 @@ select.input {
 .dropdown__item--muted {
   color: $color-text-muted;
   cursor: default;
+}
+
+// ---------------------------------------------------------------------------
+// Chat Layout
+// ---------------------------------------------------------------------------
+.chat-layout {
+  display: grid;
+  grid-template-columns: $sidebar-width 1fr;
+  height: calc(100vh - #{$header-height});
+  overflow: hidden;
+}
+
+// ---------------------------------------------------------------------------
+// Chat History Sidebar
+// ---------------------------------------------------------------------------
+.chat-sidebar {
+  background: $color-surface;
+  border-right: 1px solid $color-border;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-sidebar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $space-md $space-md $space-sm;
+  font-size: $font-size-sm;
+  font-weight: 700;
+  color: $color-text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid $color-border;
+  flex-shrink: 0;
+}
+
+.chat-sidebar__list {
+  list-style: none;
+  flex: 1;
+  overflow-y: auto;
+  padding: $space-sm 0;
+}
+
+.chat-sidebar__item {
+  padding: $space-sm $space-md;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  font-size: $font-size-sm;
+  color: $color-text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.15s, border-color 0.15s;
+
+  &:hover {
+    background: lighten($color-primary, 42%);
+    border-left-color: $color-primary;
+  }
+
+  &--active {
+    background: lighten($color-primary, 40%);
+    border-left-color: $color-primary;
+    font-weight: 600;
+  }
+}
+
+.chat-sidebar__empty {
+  padding: $space-lg;
+  color: $color-text-muted;
+  text-align: center;
+  font-style: italic;
+  font-size: $font-size-sm;
+}
+
+// ---------------------------------------------------------------------------
+// Chat Main
+// ---------------------------------------------------------------------------
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: $color-bg;
+}
+
+// ---------------------------------------------------------------------------
+// Chat Messages
+// ---------------------------------------------------------------------------
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: $space-xl $space-xl $space-md;
+  display: flex;
+  flex-direction: column;
+  gap: $space-md;
+  scroll-behavior: smooth;
+}
+
+// Welcome screen shown when no messages exist
+.chat-welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: $space-md;
+  color: $color-text-muted;
+  padding: $space-xl;
+}
+
+.chat-welcome__icon {
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.chat-welcome__title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: $color-text;
+}
+
+.chat-welcome__subtitle {
+  font-size: $font-size-base;
+  max-width: 400px;
+}
+
+// Individual message
+.chat-message {
+  display: flex;
+  flex-direction: column;
+  max-width: 72%;
+  gap: $space-xs;
+
+  &--agent {
+    align-self: flex-start;
+  }
+
+  &--human {
+    align-self: flex-end;
+    align-items: flex-end;
+  }
+
+  &--system {
+    align-self: center;
+    max-width: 80%;
+    align-items: center;
+  }
+}
+
+.chat-message__sender {
+  font-size: $font-size-sm;
+  font-weight: 600;
+  color: $color-text-muted;
+  padding: 0 $space-sm;
+}
+
+.chat-message--agent .chat-message__sender {
+  color: $color-primary;
+}
+
+.chat-message__bubble {
+  padding: $space-sm $space-md;
+  border-radius: $radius-lg;
+  font-size: $font-size-base;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-message--agent .chat-message__bubble {
+  background: $color-surface;
+  border: 1px solid $color-border;
+  color: $color-text;
+  border-top-left-radius: 2px;
+}
+
+.chat-message--human .chat-message__bubble {
+  background: $color-primary;
+  color: #fff;
+  border-top-right-radius: 2px;
+}
+
+.chat-message--system .chat-message__bubble {
+  background: lighten($color-info, 42%);
+  color: darken($color-info, 10%);
+  border: 1px solid lighten($color-info, 30%);
+  font-size: $font-size-sm;
+  text-align: center;
+}
+
+// ---------------------------------------------------------------------------
+// Chat Input Panel
+// ---------------------------------------------------------------------------
+.chat-input-panel {
+  background: $color-surface;
+  border-top: 1px solid $color-border;
+  padding: $space-sm $space-md $space-md;
+  display: flex;
+  flex-direction: column;
+  gap: $space-sm;
+  flex-shrink: 0;
+}
+
+.chat-input-panel__toolbar {
+  display: flex;
+  align-items: center;
+  gap: $space-sm;
+}
+
+// Projects dropdown in chat panel — opens upward
+.chat-project-dropdown {
+  .dropdown__menu--up {
+    top: auto;
+    bottom: 100%;
+    margin-top: 0;
+    margin-bottom: $space-xs;
+  }
+}
+
+.chat-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: $space-sm;
+  background: $color-bg;
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $space-sm;
+  transition: border-color 0.15s, box-shadow 0.15s;
+
+  &:focus-within {
+    border-color: $color-primary;
+    box-shadow: 0 0 0 2px rgba($color-primary, 0.12);
+  }
+}
+
+.chat-input__textarea {
+  flex: 1;
+  border: none;
+  background: transparent;
+  resize: none;
+  font-family: $font-family;
+  font-size: $font-size-base;
+  color: $color-text;
+  line-height: 1.5;
+  min-height: 1.5rem;
+  max-height: 10rem;
+  overflow-y: auto;
+  padding: 2px 0;
+
+  &:focus { outline: none; }
+
+  &::placeholder { color: $color-text-muted; }
+}
+
+.chat-send-btn {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  min-width: 2.25rem;
+  border-radius: 50%;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
 }

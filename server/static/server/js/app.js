@@ -22,6 +22,11 @@ document.addEventListener("DOMContentLoaded", function () {
       button.disabled = !hasSecret;
       button.title = hasSecret ? "" : "Enter the Secret Key in the header before saving.";
     });
+
+    // Show/hide delete buttons in the sidebar
+    document.querySelectorAll(".sidebar__delete").forEach(function (btn) {
+      btn.hidden = !hasSecret;
+    });
   }
 
   function syncHumanGateFields() {
@@ -160,4 +165,136 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   syncFormState();
+
+  // =========================================================================
+  // Chat UI — home page interactions
+  // =========================================================================
+
+  var chatMessages = document.getElementById("chat-messages");
+  var chatInput = document.getElementById("chat-input");
+  var chatSendBtn = document.getElementById("chat-send-btn");
+  var resetChatBtn = document.getElementById("reset-chat-btn");
+  var chatProjectBtn = document.getElementById("chat-project-btn");
+
+  // Only wire up when chat elements exist (home page only)
+  if (!chatMessages || !chatInput) return;
+
+  // -----------------------------------------------------------------------
+  // Helpers
+  // -----------------------------------------------------------------------
+
+  function scrollChatToBottom() {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function removeWelcome() {
+    var welcome = chatMessages.querySelector(".chat-welcome");
+    if (welcome) welcome.remove();
+  }
+
+  function appendMessage(sender, text, type) {
+    // type: "human" | "agent" | "system"
+    var msg = document.createElement("div");
+    msg.className = "chat-message chat-message--" + type;
+
+    if (type !== "system") {
+      var senderEl = document.createElement("div");
+      senderEl.className = "chat-message__sender";
+      senderEl.textContent = sender;
+      msg.appendChild(senderEl);
+    }
+
+    var bubble = document.createElement("div");
+    bubble.className = "chat-message__bubble";
+    bubble.textContent = text;
+    msg.appendChild(bubble);
+
+    chatMessages.appendChild(msg);
+    scrollChatToBottom();
+  }
+
+  // -----------------------------------------------------------------------
+  // Auto-resize textarea
+  // -----------------------------------------------------------------------
+  chatInput.addEventListener("input", function () {
+    chatInput.style.height = "auto";
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 160) + "px";
+  });
+
+  // -----------------------------------------------------------------------
+  // Send on Enter (Shift+Enter = newline)
+  // -----------------------------------------------------------------------
+  chatInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (chatSendBtn) chatSendBtn.click();
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Send button — append human bubble (UI only)
+  // -----------------------------------------------------------------------
+  if (chatSendBtn) {
+    chatSendBtn.addEventListener("click", function () {
+      var text = chatInput.value.trim();
+      if (!text) return;
+
+      removeWelcome();
+      appendMessage("You", text, "human");
+
+      // Clear + reset height
+      chatInput.value = "";
+      chatInput.style.height = "auto";
+      chatInput.focus();
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Reset chat
+  // -----------------------------------------------------------------------
+  if (resetChatBtn) {
+    resetChatBtn.addEventListener("click", function () {
+      chatMessages.innerHTML = "";
+
+      // Restore welcome screen
+      var welcome = document.createElement("div");
+      welcome.className = "chat-welcome";
+      welcome.innerHTML = [
+        '<div class="chat-welcome__icon">\uD83E\uDD16</div>',
+        '<h2 class="chat-welcome__title">Product Discovery</h2>',
+        '<p class="chat-welcome__subtitle">Select a project and start a conversation with your AI agents.</p>'
+      ].join("");
+      chatMessages.appendChild(welcome);
+
+      // Reset project button label
+      if (chatProjectBtn) {
+        chatProjectBtn.textContent = "Projects \u25BE";
+        chatProjectBtn.dataset.activeProject = "";
+      }
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Project selection from chat panel dropdown
+  // -----------------------------------------------------------------------
+  document.body.addEventListener("click", function (e) {
+    var item = e.target.closest(".chat-project-item");
+    if (!item) return;
+
+    e.preventDefault();
+    var projectName = item.dataset.project;
+    if (!projectName) return;
+
+    // Update button label
+    if (chatProjectBtn) {
+      chatProjectBtn.textContent = projectName + " \u25BE";
+      chatProjectBtn.dataset.activeProject = projectName;
+    }
+
+    // Show system notice in chat
+    removeWelcome();
+    appendMessage(null, "Project \u201C" + projectName + "\u201D selected.", "system");
+    chatInput.focus();
+  });
+
 });

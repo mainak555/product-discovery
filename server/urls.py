@@ -19,6 +19,9 @@ urlpatterns = [
     # HTMX partial — create a new project (POST only)
     path("projects/create/", views.project_create, name="project_create"),
 
+    # HTMX partial — delete a project (POST only)
+    path("projects/<str:project_name>/delete/", views.project_delete, name="project_delete"),
+
     # HTMX partials — single project (GET = detail, POST = update)
     path("projects/<str:project_name>/", views.project_detail, name="project_detail"),
 

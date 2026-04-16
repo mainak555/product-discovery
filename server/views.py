@@ -99,9 +99,9 @@ def _render_shell(request, projects=None, auto_open_create=False):
 
 @require_GET
 def index(request):
-    """Render the full SPA shell. Auto-opens create form when no projects exist."""
+    """Render the chat home page."""
     projects = services.list_projects()
-    return _render_shell(request, projects=projects, auto_open_create=not projects)
+    return render(request, "server/home.html", {"projects": projects})
 
 
 @require_GET
@@ -148,6 +148,30 @@ def project_create(request):
         "server/partials/config_form.html",
         _get_form_context(project=project, mode="update", success="Saved successfully!"),
     )
+    response["HX-Trigger"] = "refreshSidebar"
+    return response
+
+
+@require_POST
+def project_delete(request, project_name):
+    """HTMX partial — delete a project (POST only, secret-key gated)."""
+    if not _has_valid_secret(request):
+        return HttpResponse(
+            '<div class="alert alert-error">Unauthorized.</div>',
+            status=403,
+        )
+
+    try:
+        services.delete_project(project_name)
+    except ValueError as e:
+        return HttpResponse(
+            f'<div class="alert alert-error">{e}</div>',
+            status=404,
+        )
+
+    # Return empty string so hx-swap="outerHTML" removes the <li>,
+    # then trigger a full sidebar refresh for consistency.
+    response = HttpResponse("")
     response["HX-Trigger"] = "refreshSidebar"
     return response
 

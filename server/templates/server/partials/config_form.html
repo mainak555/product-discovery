@@ -102,7 +102,7 @@
           <select id="human_gate_interaction_mode"
                   name="human_gate[interaction_mode]"
                   class="input">
-            <option value="approve_reject" {% if project.human_gate.interaction_mode|default:'approve_reject' == 'approve_reject' %}selected{% endif %}>Approve / Reject</option>
+            <!--option value="approve_reject" {% if project.human_gate.interaction_mode|default:'approve_reject' == 'approve_reject' %}selected{% endif %}>Approve / Reject</option-->
             <option value="feedback" {% if project.human_gate.interaction_mode == 'feedback' %}selected{% endif %}>Feedback</option>
           </select>
         </div>

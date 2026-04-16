@@ -172,6 +172,15 @@ def update_project(project_name, data):
     return normalize_project(cleaned)
 
 
+def delete_project(project_name):
+    """Delete a project by name. Raises ValueError if the project does not exist."""
+    ensure_indexes()
+    col = get_collection("project_settings")
+    result = col.delete_one({"project_name": project_name})
+    if result.deleted_count == 0:
+        raise ValueError(f"Project '{project_name}' not found.")
+
+
 # ---------------------------------------------------------------------------
 # Authentication
 # ---------------------------------------------------------------------------

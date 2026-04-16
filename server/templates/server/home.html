@@ -1,0 +1,97 @@
+{% load compress static django_htmx %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product Discovery — Chat</title>
+
+  {% compress css %}
+  <link rel="stylesheet" type="text/x-scss" href="{% static 'server/scss/main.scss' %}">
+  {% endcompress %}
+
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
+  {% django_htmx_script %}
+</head>
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+
+  {% include "server/partials/header.html" %}
+
+  <div class="chat-layout">
+
+    <!-- ====== LEFT: Chat History Sidebar ====== -->
+    <aside class="chat-sidebar">
+      <div class="chat-sidebar__header">
+        <span>Chats</span>
+        <button class="btn btn--xs btn--secondary" id="new-chat-btn" title="New chat">＋</button>
+      </div>
+      <ul class="chat-sidebar__list" id="chat-history-list">
+        <!-- Placeholder — chat persistence is a future phase -->
+        <li class="chat-sidebar__empty">No chats yet.</li>
+      </ul>
+    </aside>
+
+    <!-- ====== RIGHT: Chat Main Panel ====== -->
+    <div class="chat-main">
+
+      <!-- Messages scroll area -->
+      <div class="chat-messages" id="chat-messages">
+        <!-- Welcome message -->
+        <div class="chat-welcome">
+          <div class="chat-welcome__icon">🤖</div>
+          <h2 class="chat-welcome__title">Product Discovery</h2>
+          <p class="chat-welcome__subtitle">Select a project and start a conversation with your AI agents.</p>
+        </div>
+      </div>
+
+      <!-- Input panel pinned to bottom -->
+      <div class="chat-input-panel">
+
+        <!-- Toolbar: Reset + Project selector -->
+        <div class="chat-input-panel__toolbar">
+          <button class="btn btn--secondary btn--sm" id="reset-chat-btn" title="Reset conversation">
+            Reset
+          </button>
+
+          <!-- Projects dropdown — opens upward -->
+          <div class="dropdown chat-project-dropdown">
+            <button class="btn btn--secondary btn--sm dropdown__toggle"
+                    id="chat-project-btn"
+                    type="button"
+                    data-active-project="">
+              Projects ▾
+            </button>
+            <div class="dropdown__menu dropdown__menu--up">
+              {% for project in projects %}
+                <a class="dropdown__item chat-project-item"
+                   href="#"
+                   data-project="{{ project.project_name }}">
+                  {{ project.project_name }}
+                </a>
+              {% empty %}
+                <span class="dropdown__item dropdown__item--muted">No projects yet</span>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+
+        <!-- Text input row -->
+        <div class="chat-input-row">
+          <textarea id="chat-input"
+                    class="chat-input__textarea"
+                    placeholder="Send a message"
+                    rows="1"
+                    autocomplete="off"></textarea>
+          <button class="btn btn--primary chat-send-btn" id="chat-send-btn" title="Send">
+            ↑
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script src="{% static 'server/js/app.js' %}"></script>
+</body>
+</html>
