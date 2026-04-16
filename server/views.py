@@ -153,7 +153,7 @@ def project_create(request):
 
 
 @require_POST
-def project_delete(request, project_name):
+def project_delete(request, project_id):
     """HTMX partial — delete a project (POST only, secret-key gated)."""
     if not _has_valid_secret(request):
         return HttpResponse(
@@ -162,7 +162,7 @@ def project_delete(request, project_name):
         )
 
     try:
-        services.delete_project(project_name)
+        services.delete_project(project_id)
     except ValueError as e:
         return HttpResponse(
             f'<div class="alert alert-error">{e}</div>',
@@ -177,13 +177,13 @@ def project_delete(request, project_name):
 
 
 @require_http_methods(["GET", "POST"])
-def project_detail(request, project_name):
+def project_detail(request, project_id):
     """
     GET  — Load project config (form if admin, readonly otherwise).
     POST — Create or update project config (admin only).
     """
     if request.method == "GET":
-        project = services.get_project(project_name)
+        project = services.get_project(project_id)
         if project is None:
             return HttpResponse(
                 '<div class="alert alert-error">Project not found.</div>',
@@ -202,7 +202,7 @@ def project_detail(request, project_name):
                 "project": project,
             })
 
-    # POST — create or update
+    # POST — update
     if not _has_valid_secret(request):
         return HttpResponse(
             '<div class="alert alert-error">Unauthorized. Enter a valid Secret Key in the header before saving.</div>',
@@ -211,9 +211,8 @@ def project_detail(request, project_name):
 
     data = _build_project_data(request.POST)
 
-    # POST on this URL is always an update
     try:
-        project = services.update_project(project_name, data)
+        project = services.update_project(project_id, data)
     except ValueError as e:
         return HttpResponse(
             f'<div class="alert alert-error">{e}</div>',

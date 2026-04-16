@@ -1,7 +1,5 @@
 """Input validation for project configuration data."""
 
-import re
-
 from .model_catalog import get_agent_model_names
 
 TEAM_TYPES = ("round_robin",)
@@ -116,11 +114,6 @@ def validate_project(data):
     project_name = (data.get("project_name") or "").strip()
     if not project_name:
         raise ValueError("'project_name' is required.")
-    if not re.match(r"^[a-z][a-z0-9_-]*$", project_name):
-        raise ValueError(
-            "Project name must be lowercase alphanumeric with hyphens/underscores, "
-            "starting with a letter."
-        )
 
     objective = (data.get("objective") or "").strip()
     if not objective:

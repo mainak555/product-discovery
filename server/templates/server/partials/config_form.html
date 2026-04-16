@@ -11,7 +11,7 @@
         hx-post="{% url 'server:project_create' %}"
         id="config-form-create"
       {% else %}
-        hx-post="{% url 'server:project_detail' project.project_name %}"
+        hx-post="{% url 'server:project_detail' project.project_id %}"
       {% endif %}
       hx-target="#main-content"
       hx-swap="innerHTML">
@@ -30,12 +30,9 @@
            name="project_name"
            class="input"
            value="{{ project.project_name|default:'' }}"
-           placeholder="my-project-name"
-           {% if mode == "update" %}readonly{% endif %}
+           placeholder="My Project Name"
            required>
-    {% if mode == "create" %}
-      <small class="form-hint">Lowercase, hyphens/underscores allowed. Cannot be changed later.</small>
-    {% endif %}
+    <small class="form-hint">Displayed name — can be changed at any time.</small>
   </div>
 
   <!-- Objective -->

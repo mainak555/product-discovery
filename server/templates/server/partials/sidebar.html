@@ -4,7 +4,7 @@
     {% for project in projects %}
       <li class="sidebar__item">
         <span class="sidebar__name"
-              hx-get="{% url 'server:project_detail' project.project_name %}"
+              hx-get="{% url 'server:project_detail' project.project_id %}"
               hx-target="#main-content"
               hx-push-url="false">
           {{ project.project_name }}
@@ -13,7 +13,7 @@
                 hidden
                 type="button"
                 title="Delete {{ project.project_name }}"
-                hx-post="{% url 'server:project_delete' project.project_name %}"
+                hx-post="{% url 'server:project_delete' project.project_id %}"
                 hx-confirm="Delete '{{ project.project_name }}'? This cannot be undone."
                 hx-target="closest li"
                 hx-swap="outerHTML">

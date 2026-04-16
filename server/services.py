@@ -8,6 +8,8 @@ and translate results into HTTP/HTMX responses.
 import hmac
 import os
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from pymongo.errors import DuplicateKeyError
 
 from .db import get_collection, ensure_indexes
@@ -99,6 +101,7 @@ def normalize_project(project):
     }
 
     return {
+        "project_id": str(project["_id"]) if project.get("_id") else "",
         "project_name": project.get("project_name", ""),
         "objective": project.get("objective", ""),
         "agents": assistants,
@@ -115,15 +118,19 @@ def list_projects():
     """Return all project settings, sorted by project_name ascending."""
     ensure_indexes()
     col = get_collection("project_settings")
-    cursor = col.find({}, {"_id": 0}).sort("project_name", 1)
-    return list(cursor)
+    cursor = col.find({}).sort("project_name", 1)
+    return [normalize_project(p) for p in cursor]
 
 
-def get_project(project_name):
-    """Return a single project by name, or None if not found."""
+def get_project(project_id):
+    """Return a single project by _id (hex string), or None if not found."""
     ensure_indexes()
+    try:
+        oid = ObjectId(project_id)
+    except (InvalidId, TypeError):
+        return None
     col = get_collection("project_settings")
-    project = col.find_one({"project_name": project_name}, {"_id": 0})
+    project = col.find_one({"_id": oid})
     return normalize_project(project)
 
 
@@ -131,54 +138,66 @@ def create_project(data):
     """
     Validate and insert a new project configuration.
 
-    Returns the created document (without _id).
+    Returns the created document (with project_id populated).
     Raises ValueError on validation errors or duplicate name.
     """
     cleaned = validate_project(data)
 
     ensure_indexes()
     col = get_collection("project_settings")
+    doc = cleaned.copy()
     try:
-        col.insert_one(cleaned.copy())
+        col.insert_one(doc)
     except DuplicateKeyError:
         raise ValueError(
-            f"Project '{cleaned['project_name']}' already exists."
+            f"A project named '{cleaned['project_name']}' already exists."
         )
 
-    return normalize_project(cleaned)
+    return normalize_project(doc)
 
 
-def update_project(project_name, data):
+def update_project(project_id, data):
     """
     Validate and update an existing project configuration.
 
-    The project_name in the URL is authoritative (cannot be changed).
+    project_id is the MongoDB _id hex string. Project name may be changed.
     Returns the updated document.
     Raises ValueError on validation errors or if the project doesn't exist.
     """
-    # Force the project_name from the URL (prevent renaming)
-    data["project_name"] = project_name
+    try:
+        oid = ObjectId(project_id)
+    except (InvalidId, TypeError):
+        raise ValueError(f"Invalid project ID '{project_id}'.")
+
     cleaned = validate_project(data)
 
     ensure_indexes()
     col = get_collection("project_settings")
-    result = col.replace_one(
-        {"project_name": project_name},
-        cleaned,
-    )
+    try:
+        result = col.replace_one({"_id": oid}, cleaned)
+    except DuplicateKeyError:
+        raise ValueError(
+            f"A project named '{cleaned['project_name']}' already exists."
+        )
     if result.matched_count == 0:
-        raise ValueError(f"Project '{project_name}' not found.")
+        raise ValueError(f"Project not found.")
 
+    cleaned["_id"] = oid
     return normalize_project(cleaned)
 
 
-def delete_project(project_name):
-    """Delete a project by name. Raises ValueError if the project does not exist."""
+def delete_project(project_id):
+    """Delete a project by _id (hex string). Raises ValueError if not found."""
+    try:
+        oid = ObjectId(project_id)
+    except (InvalidId, TypeError):
+        raise ValueError(f"Invalid project ID '{project_id}'.")
+
     ensure_indexes()
     col = get_collection("project_settings")
-    result = col.delete_one({"project_name": project_name})
+    result = col.delete_one({"_id": oid})
     if result.deleted_count == 0:
-        raise ValueError(f"Project '{project_name}' not found.")
+        raise ValueError("Project not found.")
 
 
 # ---------------------------------------------------------------------------

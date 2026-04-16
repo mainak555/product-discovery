@@ -65,7 +65,8 @@
               {% for project in projects %}
                 <a class="dropdown__item chat-project-item"
                    href="#"
-                   data-project="{{ project.project_name }}">
+                   data-project="{{ project.project_name }}"
+                   data-project-id="{{ project.project_id }}">
                   {{ project.project_name }}
                 </a>
               {% empty %}
