@@ -1,0 +1,52 @@
+{% load compress static django_htmx %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product Discovery — Agent Configuration</title>
+
+  <!-- Compiled SCSS -->
+  {% compress css %}
+  <link rel="stylesheet" type="text/x-scss" href="{% static 'server/scss/main.scss' %}">
+  {% endcompress %}
+
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
+  {% django_htmx_script %}
+</head>
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+
+  <!-- ====== HEADER ====== -->
+  {% include "server/partials/header.html" %}
+
+  <!-- ====== MAIN LAYOUT: sidebar + content ====== -->
+  <div class="layout">
+
+    <!-- Sidebar — server-rendered; HTMX only refreshes after project changes -->
+    <aside class="sidebar" id="sidebar"
+           hx-get="{% url 'server:project_list' %}"
+           hx-trigger="refreshSidebar from:body"
+           hx-target="#sidebar-list">
+      <div id="sidebar-list">
+        {% include "server/partials/sidebar.html" %}
+      </div>
+    </aside>
+
+    <!-- Main content area — HTMX partials swap here -->
+    <main class="content" id="main-content">
+      {% if auto_open_create %}
+        {% include "server/partials/config_form.html" with mode="create" %}
+      {% else %}
+        <div class="content__placeholder">
+          <p>Select a project from the sidebar or use Configurations to create one.</p>
+        </div>
+      {% endif %}
+    </main>
+
+  </div>
+
+  <!-- App JS (agent card dynamics) -->
+  <script src="{% static 'server/js/app.js' %}"></script>
+</body>
+</html>

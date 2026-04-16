@@ -1,0 +1,157 @@
+<!-- Configuration form (create / edit) — HTMX partial -->
+{% load static %}
+
+{% if success %}
+  <div class="alert alert-success" id="toast">{{ success }}</div>
+{% endif %}
+
+<form class="config-form"
+      method="post"
+      {% if mode == "create" %}
+        hx-post="{% url 'server:project_create' %}"
+        id="config-form-create"
+      {% else %}
+        hx-post="{% url 'server:project_detail' project.project_name %}"
+      {% endif %}
+      hx-target="#main-content"
+      hx-swap="innerHTML">
+
+  {% csrf_token %}
+
+  <h2 class="config-form__title">
+    {% if mode == "create" %}New Configuration{% else %}Edit: {{ project.project_name }}{% endif %}
+  </h2>
+
+  <!-- Project Name -->
+  <div class="form-group">
+    <label for="project_name">Project Name</label>
+    <input type="text"
+           id="project_name"
+           name="project_name"
+           class="input"
+           value="{{ project.project_name|default:'' }}"
+           placeholder="my-project-name"
+           {% if mode == "update" %}readonly{% endif %}
+           required>
+    {% if mode == "create" %}
+      <small class="form-hint">Lowercase, hyphens/underscores allowed. Cannot be changed later.</small>
+    {% endif %}
+  </div>
+
+  <!-- Objective -->
+  <div class="form-group">
+    <label for="objective">Objective</label>
+    <textarea id="objective"
+              name="objective"
+              class="input input--textarea"
+              rows="3"
+              placeholder="Describe the discovery objective…"
+              required>{{ project.objective|default:'' }}</textarea>
+  </div>
+
+  <p class="form-hint form-hint--block">Enter the Secret Key in the header before saving. The key is sent as a request header and validated on the server.</p>
+
+  <!-- ====== AGENTS ====== -->
+  <fieldset class="form-group agents-fieldset">
+    <legend>Assistant Agents</legend>
+
+    <div id="agents-container">
+      {% if project.agents %}
+        {% for agent in project.agents %}
+          {% include "server/partials/_agent_card.html" with idx=forloop.counter0 agent=agent %}
+        {% endfor %}
+      {% else %}
+        <!-- Default empty first agent card -->
+        {% include "server/partials/_agent_card.html" with idx=0 agent=None %}
+      {% endif %}
+    </div>
+
+    <button type="button" class="btn btn--secondary btn--sm" id="add-agent-btn">
+      + Add Agent
+    </button>
+  </fieldset>
+
+  <!-- ====== HUMAN GATE ====== -->
+  <fieldset class="form-group">
+    <legend>Human Gate</legend>
+
+    <div class="form-group form-group--inline">
+      <label>
+        <input type="checkbox"
+               id="human-gate-enabled"
+               name="human_gate[enabled]"
+               {% if project.human_gate.enabled %}checked{% endif %}>
+        Enable human approval gate
+      </label>
+    </div>
+
+    <div id="human-gate-fields" {% if not project.human_gate.enabled %}hidden{% endif %}>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="human_gate_name">Gate Name</label>
+          <input type="text"
+                 id="human_gate_name"
+                 name="human_gate[name]"
+                 class="input"
+                 value="{{ project.human_gate.name|default:'Architect' }}"
+                 placeholder="Architect">
+        </div>
+
+        <div class="form-group">
+          <label for="human_gate_interaction_mode">Interaction Mode</label>
+          <select id="human_gate_interaction_mode"
+                  name="human_gate[interaction_mode]"
+                  class="input">
+            <option value="approve_reject" {% if project.human_gate.interaction_mode|default:'approve_reject' == 'approve_reject' %}selected{% endif %}>Approve / Reject</option>
+            <option value="feedback" {% if project.human_gate.interaction_mode == 'feedback' %}selected{% endif %}>Feedback</option>
+          </select>
+        </div>
+      </div>
+      <small class="form-hint">If disabled, team max iterations cannot exceed 10.</small>
+    </div>
+  </fieldset>
+
+  <!-- ====== TEAM ====== -->
+  <fieldset class="form-group">
+    <legend>Team</legend>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="team_type">Team Type</label>
+        <select id="team_type" name="team[type]" class="input">
+          <option value="round_robin" {% if project.team.type|default:'round_robin' == 'round_robin' %}selected{% endif %}>Round Robin</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="max_iterations">Max Iterations</label>
+        <input type="number"
+               id="max_iterations"
+               name="team[max_iterations]"
+               class="input input--sm"
+               value="{{ project.team.max_iterations|default:5 }}"
+               min="1"
+               max="100">
+      </div>
+    </div>
+  </fieldset>
+
+  <!-- Submit / Clear -->
+  <div class="form-actions">
+    <button type="submit" class="btn btn--primary">
+      {% if mode == "create" %}Create{% else %}Update{% endif %}
+    </button>
+    <button type="button" class="btn btn--danger"
+            hx-get="{% url 'server:project_new' %}"
+            hx-target="#main-content"
+            hx-swap="innerHTML">
+      Clear
+    </button>
+  </div>
+
+</form>
+
+<!-- Agent card template (hidden, cloned by JS) -->
+<template id="agent-card-template">
+  {% include "server/partials/_agent_card.html" with idx="__IDX__" agent=None %}
+</template>

@@ -1,0 +1,20 @@
+{
+  "claude-3-7-sonnet": {
+    "provider": "anthropic"
+  },
+  "gemini-2.5-flash": {
+    "provider": "google"
+  },
+  "gemini-2.5-pro": {
+    "provider": "google"
+  },
+  "gpt-4.1": {
+    "provider": "openai"
+  },
+  "gpt-4.1-mini": {
+    "provider": "openai"
+  },
+  "gpt-4o": {
+    "provider": "openai"
+  }
+}

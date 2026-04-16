@@ -1,0 +1,435 @@
+@import "variables";
+
+// ---------------------------------------------------------------------------
+// Reset & Base
+// ---------------------------------------------------------------------------
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 16px; }
+
+body {
+  font-family: $font-family;
+  font-size: $font-size-base;
+  color: $color-text;
+  background: $color-bg;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+a { color: $color-primary; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+// ---------------------------------------------------------------------------
+// Header
+// ---------------------------------------------------------------------------
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: $header-height;
+  padding: 0 $space-lg;
+  background: $color-surface;
+  border-bottom: 1px solid $color-border;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header__brand { display: flex; align-items: center; gap: $space-sm; }
+
+.header__title {
+  font-size: $font-size-lg;
+  font-weight: 700;
+  color: $color-primary;
+}
+
+.header__actions {
+  display: flex;
+  align-items: center;
+  gap: $space-md;
+}
+
+.header__auth {
+  display: flex;
+  align-items: center;
+  gap: $space-sm;
+}
+
+.header__hint {
+  color: $color-text-muted;
+  font-size: $font-size-sm;
+}
+
+// ---------------------------------------------------------------------------
+// Layout (sidebar + content)
+// ---------------------------------------------------------------------------
+.layout {
+  display: grid;
+  grid-template-columns: $sidebar-width 1fr;
+  flex: 1;
+  min-height: calc(100vh - #{$header-height});
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar
+// ---------------------------------------------------------------------------
+.sidebar {
+  background: $color-surface;
+  border-right: 1px solid $color-border;
+  overflow-y: auto;
+  padding: $space-md 0;
+}
+
+.sidebar__list {
+  list-style: none;
+}
+
+.sidebar__item {
+  padding: $space-sm $space-lg;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+
+  &:hover {
+    background: lighten($color-primary, 42%);
+    border-left-color: $color-primary;
+  }
+}
+
+.sidebar__name {
+  font-size: $font-size-base;
+  font-weight: 500;
+}
+
+.sidebar__empty {
+  padding: $space-lg;
+  color: $color-text-muted;
+  text-align: center;
+  font-style: italic;
+}
+
+// ---------------------------------------------------------------------------
+// Content
+// ---------------------------------------------------------------------------
+.content {
+  padding: $space-xl;
+  overflow-y: auto;
+}
+
+.content__placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: $color-text-muted;
+  font-size: $font-size-lg;
+}
+
+// ---------------------------------------------------------------------------
+// Buttons
+// ---------------------------------------------------------------------------
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-xs;
+  padding: $space-sm $space-md;
+  border: 1px solid $color-border;
+  border-radius: $radius;
+  font-size: $font-size-base;
+  font-family: $font-family;
+  cursor: pointer;
+  background: $color-surface;
+  color: $color-text;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+
+  &:hover { background: $color-bg; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.btn--primary {
+  background: $color-primary;
+  color: #fff;
+  border-color: $color-primary;
+  &:hover { background: $color-primary-dk; }
+}
+
+.btn--secondary {
+  background: $color-surface;
+  color: $color-text;
+}
+
+.btn--danger {
+  background: $color-error;
+  color: #fff;
+  border-color: $color-error;
+  &:hover { background: darken($color-error, 8%); }
+}
+
+.btn--sm { padding: $space-xs $space-sm; font-size: $font-size-sm; }
+.btn--xs { padding: 2px 6px; font-size: $font-size-sm; line-height: 1; }
+
+// ---------------------------------------------------------------------------
+// Inputs
+// ---------------------------------------------------------------------------
+.input {
+  display: block;
+  width: 100%;
+  padding: $space-sm $space-md;
+  border: 1px solid $color-border;
+  border-radius: $radius;
+  font-size: $font-size-base;
+  font-family: $font-family;
+  color: $color-text;
+  background: $color-surface;
+  transition: border-color 0.15s;
+
+  &:focus {
+    outline: none;
+    border-color: $color-primary;
+    box-shadow: 0 0 0 2px rgba($color-primary, 0.15);
+  }
+
+  &[readonly] {
+    background: $color-bg;
+    cursor: not-allowed;
+  }
+}
+
+.input--sm { padding: $space-xs $space-sm; font-size: $font-size-sm; }
+
+.input--textarea { resize: vertical; }
+
+select.input {
+  appearance: auto;
+}
+
+// ---------------------------------------------------------------------------
+// Forms
+// ---------------------------------------------------------------------------
+.form-group {
+  margin-bottom: $space-md;
+
+  label {
+    display: block;
+    font-weight: 600;
+    font-size: $font-size-sm;
+    margin-bottom: $space-xs;
+    color: $color-text;
+  }
+
+  small { color: $color-text-muted; }
+}
+
+.form-group--inline {
+  display: flex;
+  align-items: center;
+  gap: $space-md;
+
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: $space-xs;
+    font-weight: 400;
+    margin-bottom: 0;
+  }
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: $space-md;
+}
+
+.form-hint {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  margin-top: $space-xs;
+}
+
+.form-hint--block {
+  display: block;
+  margin-bottom: $space-lg;
+}
+
+.form-actions {
+  margin-top: $space-lg;
+  display: flex;
+  gap: $space-md;
+}
+
+// ---------------------------------------------------------------------------
+// Config form
+// ---------------------------------------------------------------------------
+.config-form {
+  max-width: 800px;
+}
+
+.config-form__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: $space-lg;
+  color: $color-text;
+}
+
+// ---------------------------------------------------------------------------
+// Agent Cards
+// ---------------------------------------------------------------------------
+.agents-fieldset {
+  border: 1px solid $color-border;
+  border-radius: $radius-lg;
+  padding: $space-lg;
+}
+
+.agent-card {
+  border: 1px solid $color-border;
+  border-radius: $radius;
+  padding: $space-md;
+  margin-bottom: $space-md;
+  background: $color-bg;
+}
+
+.agent-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: $space-sm;
+}
+
+.agent-card__number {
+  font-weight: 600;
+  font-size: $font-size-sm;
+  color: $color-primary;
+}
+
+.agent-card__detail {
+  margin-top: $space-sm;
+  font-size: $font-size-sm;
+
+  ul {
+    list-style: disc;
+    margin-left: $space-lg;
+    margin-top: $space-xs;
+  }
+}
+
+.agent-card__prompt {
+  margin-top: $space-xs;
+  padding: $space-sm;
+  background: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius;
+  white-space: pre-wrap;
+  font-family: $font-family;
+}
+
+.input--prompt {
+  min-height: 18rem;
+}
+
+.agent-card--readonly {
+  background: $color-surface;
+  margin-bottom: $space-md;
+}
+
+// ---------------------------------------------------------------------------
+// Config Readonly
+// ---------------------------------------------------------------------------
+.config-readonly {
+  max-width: 800px;
+}
+
+.config-readonly__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: $space-lg;
+}
+
+.config-readonly__section {
+  margin-bottom: $space-lg;
+
+  h3 {
+    font-size: $font-size-base;
+    font-weight: 700;
+    margin-bottom: $space-sm;
+    color: $color-primary;
+  }
+}
+
+.config-readonly__hint {
+  margin-top: $space-xl;
+  color: $color-text-muted;
+  font-size: $font-size-sm;
+}
+
+// ---------------------------------------------------------------------------
+// Badges
+// ---------------------------------------------------------------------------
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  background: $color-bg;
+  color: $color-text-muted;
+}
+
+.badge-success { background: lighten($color-success, 45%); color: $color-success; }
+.badge-error   { background: lighten($color-error, 40%);   color: $color-error; }
+
+// ---------------------------------------------------------------------------
+// Alerts / Toasts
+// ---------------------------------------------------------------------------
+.alert {
+  padding: $space-sm $space-md;
+  border-radius: $radius;
+  margin-bottom: $space-md;
+  font-size: $font-size-sm;
+  font-weight: 500;
+}
+
+.alert-success { background: lighten($color-success, 45%); color: darken($color-success, 10%); }
+.alert-error   { background: lighten($color-error, 40%);   color: darken($color-error, 10%); }
+.alert-info    { background: lighten($color-info, 45%);    color: darken($color-info, 10%); }
+
+// ---------------------------------------------------------------------------
+// Dropdown
+// ---------------------------------------------------------------------------
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown__menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  min-width: 140px;
+  background: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  z-index: 200;
+  margin-top: $space-xs;
+}
+
+.dropdown:hover .dropdown__menu,
+.dropdown:focus-within .dropdown__menu {
+  display: block;
+}
+
+.dropdown__item {
+  display: block;
+  padding: $space-sm $space-md;
+  font-size: $font-size-sm;
+  color: $color-text;
+  &:hover { background: $color-bg; text-decoration: none; }
+}
+
+.dropdown__item--muted {
+  color: $color-text-muted;
+  cursor: default;
+}

@@ -1,0 +1,55 @@
+<!-- Single agent card (used in config_form.html) -->
+<!-- Variables: idx (int or "__IDX__"), agent (dict or None) -->
+
+<div class="agent-card" data-agent-index="{{ idx }}">
+  <div class="agent-card__header">
+    <span class="agent-card__number">Agent #{{ idx|add:"1" }}</span>
+    <button type="button" class="btn btn--danger btn--xs remove-agent-btn" title="Remove agent">✕</button>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text"
+             name="agents[{{ idx }}][name]"
+             class="input input--sm"
+             value="{% if agent %}{{ agent.name }}{% endif %}"
+             placeholder="e.g. Product Manager"
+             required>
+    </div>
+
+    <div class="form-group">
+      <label>Model</label>
+      <select name="agents[{{ idx }}][model]" class="input input--sm" required>
+        {% for model_name in model_names %}
+          <option value="{{ model_name }}"
+                  {% if agent and agent.model == model_name %}selected{% elif not agent and forloop.first %}selected{% endif %}>
+            {{ model_name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>System Prompt</label>
+    <textarea name="agents[{{ idx }}][system_prompt]"
+              class="input input--textarea input--sm input--prompt"
+              rows="12"
+              placeholder="Paste the full system prompt for this agent…"
+              required>{% if agent and agent.system_prompt %}{{ agent.system_prompt }}{% else %}{{ default_system_prompt }}{% endif %}</textarea>
+  </div>
+
+  <div class="form-group">
+    <label>Temperature</label>
+    <input type="number"
+           name="agents[{{ idx }}][temperature]"
+           class="input input--sm"
+           value="{% if agent and agent.temperature %}{{ agent.temperature }}{% else %}0.7{% endif %}"
+           step="0.1"
+           min="0"
+           max="2"
+           placeholder="0.7"
+           required>
+  </div>
+</div>

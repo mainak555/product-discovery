@@ -1,0 +1,15 @@
+<!-- Sidebar project list (HTMX partial) -->
+{% if projects %}
+  <ul class="sidebar__list">
+    {% for project in projects %}
+      <li class="sidebar__item"
+          hx-get="{% url 'server:project_detail' project.project_name %}"
+          hx-target="#main-content"
+          hx-push-url="false">
+        <span class="sidebar__name">{{ project.project_name }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="sidebar__empty">No projects yet.</p>
+{% endif %}

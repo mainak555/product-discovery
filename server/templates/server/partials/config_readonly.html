@@ -1,0 +1,63 @@
+<!-- Read-only configuration view (HTMX partial) -->
+
+{% if message %}
+  <div class="alert alert-info">{{ message }}</div>
+{% endif %}
+
+{% if project %}
+<div class="config-readonly">
+  <h2 class="config-readonly__title">{{ project.project_name }}</h2>
+
+  <div class="config-readonly__section">
+    <h3>Objective</h3>
+    <p>{{ project.objective }}</p>
+  </div>
+
+  <div class="config-readonly__section">
+    <h3>Assistant Agents</h3>
+    {% for agent in project.agents %}
+      <div class="agent-card agent-card--readonly">
+        <div class="agent-card__header">
+          <strong>{{ agent.name }}</strong>
+          <span class="badge">{{ agent.model }}</span>
+        </div>
+        <div class="agent-card__detail">
+          <strong>Temperature:</strong> {{ agent.temperature }}
+        </div>
+        <div class="agent-card__detail">
+          <strong>System Prompt:</strong>
+          <pre class="agent-card__prompt">{{ agent.system_prompt }}</pre>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="config-readonly__section">
+    <h3>Human Gate</h3>
+    {% if project.human_gate.enabled %}
+      <p>
+        <strong>Name:</strong> {{ project.human_gate.name }} &nbsp;|&nbsp;
+        <strong>Mode:</strong> {{ project.human_gate.interaction_mode }}
+      </p>
+    {% else %}
+      <p>Human gate disabled.</p>
+    {% endif %}
+  </div>
+
+  <div class="config-readonly__section">
+    <h3>Team</h3>
+    <p>
+      <strong>Type:</strong> {{ project.team.type }} &nbsp;|&nbsp;
+      <strong>Max Iterations:</strong> {{ project.team.max_iterations }}
+    </p>
+  </div>
+
+  <div class="config-readonly__hint">
+    <em>Enter Secret Key & reopen this project to edit.</em>
+  </div>
+</div>
+{% else %}
+  {% if not message %}
+    <div class="alert alert-info">No project selected.</div>
+  {% endif %}
+{% endif %}

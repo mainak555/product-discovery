@@ -1,0 +1,44 @@
+<!-- ====== HEADER BAR ====== -->
+<header class="header">
+  <div class="header__brand">
+    <h1 class="header__title">Product Discovery</h1>
+  </div>
+
+  <div class="header__actions">
+
+    <!-- Project dropdown -->
+    <div class="dropdown">
+      <button class="btn btn--secondary dropdown__toggle" type="button">
+        Projects ▾
+      </button>
+      <div class="dropdown__menu">
+        {% for project in projects %}
+          <a href="{% url 'server:configurations_page' %}"
+             class="dropdown__item"
+             hx-get="{% url 'server:project_detail' project.project_name %}"
+             hx-target="#main-content"
+             hx-swap="innerHTML">
+            {{ project.project_name }}
+          </a>
+        {% empty %}
+          <span class="dropdown__item dropdown__item--muted">No projects yet</span>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Secret Key is attached to HTMX requests by app.js -->
+    <div class="header__auth">
+      <input type="password"
+             id="global-secret-key"
+             class="input input--sm"
+             placeholder="Secret Key"
+             autocomplete="off">
+    </div>
+
+    <!-- Configurations -->
+    <a class="btn btn--primary" href="{% url 'server:configurations_page' %}">
+      Configurations
+    </a>
+
+  </div>
+</header>
