@@ -7,9 +7,14 @@ Each view:
   3. Renders an HTMX partial (or full page for index)
 """
 
-from django.http import HttpResponse
+import asyncio
+import json
+from datetime import datetime, timezone
+
+from django.http import HttpResponse, StreamingHttpResponse
 from django.shortcuts import render
 from django.template.loader import render_to_string
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from . import services
@@ -291,6 +296,7 @@ def chat_session_create(request):
     # Primary content: empty (feedback div cleared, modal closes via trigger)
     response = HttpResponse(oob_list + oob_messages, content_type="text/html")
     response["HX-Trigger"] = "chatSessionCreated"
+    response["HX-Session-Id"] = session["session_id"]
     return response
 
 
@@ -303,7 +309,11 @@ def chat_session_detail(request, session_id):
             '<div class="alert alert-error">Session not found.</div>',
             status=404,
         )
-    return render(request, "server/partials/chat_session_history.html", {"session": session})
+    project = services.get_project(session["project_id"]) if session.get("project_id") else None
+    return render(request, "server/partials/chat_session_history.html", {
+        "session": session,
+        "project": project,
+    })
 
 
 @require_POST
@@ -319,3 +329,208 @@ def chat_session_delete(request, session_id):
     except ValueError as e:
         return HttpResponse(f'<div class="alert alert-error">{e}</div>', status=404)
     return HttpResponse("")
+
+
+# ---------------------------------------------------------------------------
+# SSE helpers
+# ---------------------------------------------------------------------------
+
+def _sse(event: str, data: dict) -> str:
+    """Format a single SSE frame."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+# ---------------------------------------------------------------------------
+# Agent execution — SSE streaming run
+# ---------------------------------------------------------------------------
+
+@csrf_exempt
+@require_POST
+async def chat_session_run(request, session_id):
+    """
+    POST /chat/sessions/<id>/run/
+
+    Start (or resume) an agent run for the given session.
+    Returns a text/event-stream SSE response.
+
+    Body fields:
+      task  — the user message / feedback text (empty string = resume approve)
+    """
+    if not _has_valid_secret(request):
+        return HttpResponse(json.dumps({"error": "Unauthorized"}), status=403,
+                            content_type="application/json")
+
+    session = await asyncio.to_thread(services.get_chat_session, session_id)
+    if session is None:
+        return HttpResponse(json.dumps({"error": "Session not found"}), status=404,
+                            content_type="application/json")
+
+    valid_states = ("idle", "awaiting_input")
+    if session["status"] not in valid_states:
+        return HttpResponse(
+            json.dumps({"error": f"Session is currently '{session['status']}'"}),
+            status=409, content_type="application/json",
+        )
+
+    project = await asyncio.to_thread(services.get_project, session["project_id"])
+    if project is None:
+        return HttpResponse(json.dumps({"error": "Project not found"}), status=404,
+                            content_type="application/json")
+
+    task = request.POST.get("task", "").strip() or None
+    await asyncio.to_thread(services.set_session_status, session_id, "running")
+
+    async def event_stream():
+        from autogen_agentchat.base import TaskResult
+        from autogen_agentchat.messages import TextMessage
+        from agents.runtime import get_or_build_team, reset_cancel_token, evict_team
+
+        team, _ = get_or_build_team(session_id, project)
+        # Issue a fresh cancellation token for this run
+        cancel_token = reset_cancel_token(session_id)
+
+        has_gate = project.get("human_gate", {}).get("enabled", False)
+        max_iter = project.get("team", {}).get("max_iterations", 5)
+
+        pending_messages = []
+
+        try:
+            async for msg in team.run_stream(
+                task=task,
+                cancellation_token=cancel_token,
+            ):
+                if isinstance(msg, TaskResult):
+                    # Persist accumulated messages
+                    if pending_messages:
+                        await asyncio.to_thread(services.append_messages, session_id, pending_messages)
+                        pending_messages = []
+
+                    # Re-fetch to get current_round after potential $inc
+                    updated = await asyncio.to_thread(services.get_chat_session, session_id)
+                    current_round = updated["current_round"] if updated else 0
+
+                    if has_gate and current_round < max_iter:
+                        await asyncio.to_thread(services.set_session_status, session_id, "awaiting_input")
+                        yield _sse("gate", {
+                            "mode": project["human_gate"]["interaction_mode"],
+                            "round": current_round + 1,
+                            "max_rounds": max_iter,
+                            "human_name": project["human_gate"]["name"],
+                        })
+                    else:
+                        await asyncio.to_thread(services.set_session_status, session_id, "completed")
+                        evict_team(session_id)
+                        yield _sse("done", {"status": "completed", "round": current_round})
+
+                elif isinstance(msg, TextMessage) and msg.source != "user":
+                    ts = datetime.now(timezone.utc).strftime("%H:%M")
+                    record = {
+                        "agent_name": msg.source,
+                        "role": "assistant",
+                        "content": msg.content,
+                        "timestamp": ts,
+                    }
+                    pending_messages.append(record)
+                    yield _sse("message", record)
+
+        except asyncio.CancelledError:
+            if pending_messages:
+                await asyncio.to_thread(services.append_messages, session_id, pending_messages)
+            await asyncio.to_thread(services.set_session_status, session_id, "stopped")
+            evict_team(session_id)
+            yield _sse("stopped", {"status": "stopped"})
+
+        except Exception as exc:
+            await asyncio.to_thread(services.set_session_status, session_id, "idle")
+            evict_team(session_id)
+            yield _sse("error", {"message": str(exc)})
+
+        finally:
+            # Guard: if session is still "running" (e.g. client disconnected mid-stream),
+            # reset to "idle" so it can be re-run.
+            stuck = await asyncio.to_thread(services.get_chat_session, session_id)
+            if stuck and stuck["status"] == "running":
+                await asyncio.to_thread(services.set_session_status, session_id, "idle")
+                evict_team(session_id)
+
+    response = StreamingHttpResponse(
+        event_stream(),
+        content_type="text/event-stream",
+    )
+    response["Cache-Control"] = "no-cache"
+    response["X-Accel-Buffering"] = "no"
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Human-in-the-loop response
+# ---------------------------------------------------------------------------
+
+@csrf_exempt
+@require_POST
+def chat_session_respond(request, session_id):
+    """
+    POST /chat/sessions/<id>/respond/
+
+    Human gate decision endpoint.
+
+    Body:
+      action — "approve" | "feedback" | "stop"
+      text   — feedback text (only for action=feedback)
+    """
+    if not _has_valid_secret(request):
+        return HttpResponse(json.dumps({"error": "Unauthorized"}), status=403,
+                            content_type="application/json")
+
+    session = services.get_chat_session(session_id)
+    if session is None:
+        return HttpResponse(json.dumps({"error": "Session not found"}), status=404,
+                            content_type="application/json")
+
+    if session["status"] != "awaiting_input":
+        return HttpResponse(
+            json.dumps({"error": f"Session is not awaiting input (status: {session['status']})"}),
+            status=409, content_type="application/json",
+        )
+
+    action = request.POST.get("action", "").strip()
+    text = request.POST.get("text", "").strip()
+
+    if action == "stop":
+        from agents.runtime import evict_team
+        services.set_session_status(session_id, "stopped")
+        evict_team(session_id)
+        return HttpResponse(json.dumps({"status": "stopped"}), content_type="application/json")
+
+    if action in ("approve", "feedback"):
+        services.set_session_status(session_id, "idle")
+        task = text if action == "feedback" else ""
+        return HttpResponse(
+            json.dumps({"status": "ok", "task": task}),
+            content_type="application/json",
+        )
+
+    return HttpResponse(json.dumps({"error": "Invalid action"}), status=400,
+                        content_type="application/json")
+
+
+# ---------------------------------------------------------------------------
+# Mid-run abort
+# ---------------------------------------------------------------------------
+
+@csrf_exempt
+@require_POST
+def chat_session_stop(request, session_id):
+    """
+    POST /chat/sessions/<id>/stop/
+
+    Abort a currently-running session. Returns immediately; the SSE stream
+    handles the CancelledError and emits a 'stopped' event.
+    """
+    if not _has_valid_secret(request):
+        return HttpResponse(json.dumps({"error": "Unauthorized"}), status=403,
+                            content_type="application/json")
+
+    from agents.runtime import cancel_team
+    cancel_team(session_id)
+    return HttpResponse(json.dumps({"status": "cancelling"}), content_type="application/json")

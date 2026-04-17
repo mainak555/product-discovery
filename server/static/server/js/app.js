@@ -225,8 +225,11 @@ document.addEventListener("DOMContentLoaded", function () {
   var chatMessages = document.getElementById("chat-messages");
   var chatInput = document.getElementById("chat-input");
   var chatSendBtn = document.getElementById("chat-send-btn");
+  var chatStopBtn = document.getElementById("chat-stop-btn");
   var chatProjectBtn = document.getElementById("chat-project-btn");
   var activeProjectIdInput = document.getElementById("active-project-id");
+  var activeSessionIdInput = document.getElementById("active-session-id");
+  var csrfToken = (document.getElementById("csrf-token-value") || {}).value || "";
   var newChatBtn = document.getElementById("new-chat-btn");
   var newSessionModal = document.getElementById("new-session-modal");
   var modalProjectId = document.getElementById("modal-project-id");
@@ -344,7 +347,160 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   // -----------------------------------------------------------------------
-  // Send button — append human bubble (UI only for now)
+  // SSE run client
+  // -----------------------------------------------------------------------
+
+  var _activeReader = null; // ReadableStreamDefaultReader during a run
+
+  function setRunningState(running) {
+    if (chatInput)   { chatInput.disabled = running; }
+    if (chatSendBtn) { chatSendBtn.hidden = running; }
+    if (chatStopBtn) { chatStopBtn.hidden = !running; }
+  }
+
+  function appendBubble(html) {
+    var msgs = document.getElementById("chat-history-msgs");
+    if (!msgs) {
+      // First message — replace the welcome block
+      chatMessages.innerHTML = '<div class="chat-history" id="chat-history-msgs"></div>';
+      msgs = document.getElementById("chat-history-msgs");
+    }
+    msgs.insertAdjacentHTML("beforeend", html);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function appendStatusBadge(type) {
+    var label = type === "completed" ? "✅ Run completed" : "🛑 Run stopped";
+    chatMessages.insertAdjacentHTML(
+      "beforeend",
+      '<div class="chat-status-badge chat-status-badge--' + type + '">' + label + '</div>'
+    );
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function appendGatePanel(data) {
+    var sessionId = activeSessionIdInput ? activeSessionIdInput.value : "";
+    var modeHtml = data.mode === "feedback"
+      ? '<textarea class="input input--textarea human-gate-panel__textarea" rows="3" placeholder="Type your feedback for the agents\u2026"></textarea>'
+        + '<div class="human-gate-panel__actions">'
+        + '<button class="btn btn--primary human-gate-btn human-gate-btn--feedback">\uD83D\uDCE4 Send Feedback</button>'
+        + '<button class="btn btn--danger human-gate-btn human-gate-btn--stop">\uD83D\uDED1 Stop</button>'
+        + '</div>'
+      : '<div class="human-gate-panel__actions">'
+        + '<button class="btn btn--success human-gate-btn human-gate-btn--approve">\u2705 Approve &amp; Continue</button>'
+        + '<button class="btn btn--danger human-gate-btn human-gate-btn--stop">\uD83D\uDED1 Stop</button>'
+        + '</div>';
+
+    chatMessages.insertAdjacentHTML(
+      "beforeend",
+      '<div class="human-gate-panel" data-session-id="' + sessionId + '">'
+      + '<div class="human-gate-panel__prompt">'
+      + '\uD83D\uDC64 <strong>' + (data.human_name || "You") + '</strong>'
+      + ' \u2014 Round ' + data.round + ' of ' + data.max_rounds + ' complete. What would you like to do?'
+      + '</div>'
+      + modeHtml
+      + '</div>'
+    );
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function startRun(task) {
+    var sessionId = activeSessionIdInput ? activeSessionIdInput.value.trim() : "";
+    if (!sessionId) { alert("No active session."); return; }
+
+    var keyInput = getSecretKeyInput();
+    var secretKey = keyInput ? keyInput.value.trim() : "";
+    if (!secretKey) { alert("Enter the Secret Key first."); return; }
+
+    setRunningState(true);
+
+    var body = new URLSearchParams();
+    body.append("task", task || "");
+
+    fetch("/chat/sessions/" + sessionId + "/run/", {
+      method: "POST",
+      headers: {
+        "X-App-Secret-Key": secretKey,
+        "X-CSRFToken": csrfToken,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
+    }).then(function (response) {
+      if (!response.ok) {
+        return response.json().then(function (d) { throw new Error(d.error || "Run failed"); });
+      }
+      var reader = response.body.getReader();
+      _activeReader = reader;
+      var decoder = new TextDecoder();
+      var buffer = "";
+
+      function pump() {
+        reader.read().then(function (result) {
+          if (result.done) {
+            _activeReader = null;
+            setRunningState(false);
+            return;
+          }
+          buffer += decoder.decode(result.value, { stream: true });
+          var frames = buffer.split("\n\n");
+          buffer = frames.pop(); // keep incomplete last frame
+          frames.forEach(function (frame) {
+            var eventMatch = frame.match(/^event: (\w+)/m);
+            var dataMatch  = frame.match(/^data: (.+)/m);
+            if (!eventMatch || !dataMatch) return;
+            var eventName = eventMatch[1];
+            var data;
+            try { data = JSON.parse(dataMatch[1]); } catch (e) { return; }
+            handleSSEEvent(eventName, data);
+          });
+          pump();
+        }).catch(function () {
+          _activeReader = null;
+          setRunningState(false);
+        });
+      }
+      pump();
+    }).catch(function (err) {
+      setRunningState(false);
+      appendBubble('<div class="chat-bubble chat-bubble--error">Error: ' + err.message + '</div>');
+    });
+  }
+
+  function handleSSEEvent(eventName, data) {
+    if (eventName === "message") {
+      var ts = data.timestamp || "";
+      var initial = (data.agent_name || "A").slice(0, 1).toUpperCase();
+      var contentHtml = (typeof marked !== "undefined")
+        ? marked.parse(data.content || "")
+        : "<p>" + (data.content || "").replace(/</g, "&lt;") + "</p>";
+      appendBubble(
+        '<div class="chat-bubble chat-bubble--ai">'
+        + '<div class="chat-bubble__avatar">' + initial + '</div>'
+        + '<div class="chat-bubble__body">'
+        + '<div class="chat-bubble__meta">'
+        + '<span class="chat-bubble__name">' + (data.agent_name || "Agent") + '</span>'
+        + '<span class="chat-bubble__time">' + ts + '</span>'
+        + '</div>'
+        + '<div class="chat-bubble__content">' + contentHtml + '</div>'
+        + '</div></div>'
+      );
+    } else if (eventName === "gate") {
+      setRunningState(false);
+      appendGatePanel(data);
+    } else if (eventName === "done") {
+      setRunningState(false);
+      appendStatusBadge("completed");
+    } else if (eventName === "stopped") {
+      setRunningState(false);
+      appendStatusBadge("stopped");
+    } else if (eventName === "error") {
+      setRunningState(false);
+      appendBubble('<div class="chat-bubble chat-bubble--error">\u26A0\uFE0F ' + (data.message || "Unknown error") + '</div>');
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Send button
   // -----------------------------------------------------------------------
   if (chatSendBtn) {
     chatSendBtn.addEventListener("click", function () {
@@ -352,12 +508,92 @@ document.addEventListener("DOMContentLoaded", function () {
       var text = chatInput.value.trim();
       if (!text) return;
 
-      // TODO: wire to AutoGen execution endpoint
+      // Append human bubble immediately
+      var ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      var humanContentHtml = (typeof marked !== "undefined")
+        ? marked.parse(text)
+        : "<p>" + text.replace(/</g, "&lt;") + "</p>";
+      appendBubble(
+        '<div class="chat-bubble chat-bubble--human">'
+        + '<div class="chat-bubble__meta">'
+        + '<span class="chat-bubble__name">You</span>'
+        + '<span class="chat-bubble__time">' + ts + '</span>'
+        + '</div>'
+        + '<div class="chat-bubble__content">' + humanContentHtml + '</div>'
+        + '</div>'
+      );
+
       chatInput.value = "";
       chatInput.style.height = "auto";
       chatInput.focus();
+      startRun(text);
     });
   }
+
+  // -----------------------------------------------------------------------
+  // Stop button
+  // -----------------------------------------------------------------------
+  if (chatStopBtn) {
+    chatStopBtn.addEventListener("click", function () {
+      var sessionId = activeSessionIdInput ? activeSessionIdInput.value.trim() : "";
+      var keyInput = getSecretKeyInput();
+      var secretKey = keyInput ? keyInput.value.trim() : "";
+      if (!sessionId || !secretKey) return;
+      fetch("/chat/sessions/" + sessionId + "/stop/", {
+        method: "POST",
+        headers: { "X-App-Secret-Key": secretKey, "X-CSRFToken": csrfToken },
+      });
+      // SSE stream emits 'stopped' event which calls setRunningState(false)
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Human gate panel — event delegation
+  // -----------------------------------------------------------------------
+  document.body.addEventListener("click", function (e) {
+    var panel = e.target.closest(".human-gate-panel");
+    if (!panel) return;
+
+    var sessionId = panel.dataset.sessionId
+      || (activeSessionIdInput ? activeSessionIdInput.value.trim() : "");
+    var keyInput = getSecretKeyInput();
+    var secretKey = keyInput ? keyInput.value.trim() : "";
+    if (!sessionId || !secretKey) return;
+
+    function sendRespond(action, text) {
+      var body = new URLSearchParams({ action: action });
+      if (text) body.append("text", text);
+      return fetch("/chat/sessions/" + sessionId + "/respond/", {
+        method: "POST",
+        headers: {
+          "X-App-Secret-Key": secretKey,
+          "X-CSRFToken": csrfToken,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      }).then(function (r) { return r.json(); });
+    }
+
+    if (e.target.closest(".human-gate-btn--approve")) {
+      panel.remove();
+      sendRespond("approve", "").then(function (d) {
+        if (d.status === "ok") startRun("");
+      });
+    } else if (e.target.closest(".human-gate-btn--feedback")) {
+      var ta = panel.querySelector(".human-gate-panel__textarea");
+      var text = ta ? ta.value.trim() : "";
+      if (!text) { ta && ta.focus(); return; }
+      panel.remove();
+      sendRespond("feedback", text).then(function (d) {
+        if (d.status === "ok") startRun(d.task || text);
+      });
+    } else if (e.target.closest(".human-gate-btn--stop")) {
+      panel.remove();
+      sendRespond("stop", "").then(function () {
+        appendStatusBadge("stopped");
+      });
+    }
+  });
 
   // -----------------------------------------------------------------------
   // Project selection from chat panel dropdown
@@ -378,8 +614,30 @@ document.addEventListener("DOMContentLoaded", function () {
       chatProjectBtn.dataset.activeProjectId = projectId;
     }
 
-    // Track active project for modal
+    // Track active project for modal; clear active session
     if (activeProjectIdInput) activeProjectIdInput.value = projectId || "";
+    if (activeSessionIdInput) activeSessionIdInput.value = "";
+  });
+
+  // -----------------------------------------------------------------------
+  // Session selection — set activeSessionIdInput when an HTMX session link fires
+  // -----------------------------------------------------------------------
+  document.body.addEventListener("htmx:beforeRequest", function (e) {
+    var elt = e.detail && e.detail.elt;
+    if (!elt) return;
+    var li = elt.closest("li[data-session-id]");
+    if (li && activeSessionIdInput) activeSessionIdInput.value = li.dataset.sessionId || "";
+  });
+
+  // chatSessionCreated: modal close + set session id from response header
+  document.body.addEventListener("chatSessionCreated", function (e) {
+    closeModal();
+    // HX-Session-Id header carries the new session id (set by the create view)
+    var detail = e.detail || {};
+    if (detail.xhr) {
+      var sid = detail.xhr.getResponseHeader("HX-Session-Id");
+      if (sid && activeSessionIdInput) activeSessionIdInput.value = sid;
+    }
   });
 
   // Show/hide delete buttons after HTMX swaps new session list items

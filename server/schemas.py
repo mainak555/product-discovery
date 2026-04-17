@@ -15,6 +15,20 @@ def validate_agent(data):
     if not name:
         raise ValueError("Agent 'name' is required.")
 
+    # AutoGen requires agent names to be valid Python identifiers.
+    # Sanitise: replace spaces/hyphens with underscores, strip the rest.
+    import re
+    sanitised = re.sub(r"[\s\-]+", "_", name)
+    sanitised = re.sub(r"[^\w]", "", sanitised)
+    if sanitised and sanitised[0].isdigit():
+        sanitised = "_" + sanitised
+    if not sanitised or not sanitised.isidentifier():
+        raise ValueError(
+            f"Agent name '{name}' is not a valid identifier. "
+            "Use only letters, digits, and underscores (no spaces or special characters)."
+        )
+    name = sanitised
+
     model = (data.get("model") or data.get("model_name") or "").strip()
     available_models = get_agent_model_names()
     if not model:

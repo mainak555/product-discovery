@@ -28,6 +28,9 @@ urlpatterns = [
     # Chat sessions
     path("chat/sessions/", views.chat_session_list, name="chat_session_list"),
     path("chat/sessions/create/", views.chat_session_create, name="chat_session_create"),
+    path("chat/sessions/<str:session_id>/run/", views.chat_session_run, name="chat_session_run"),
+    path("chat/sessions/<str:session_id>/respond/", views.chat_session_respond, name="chat_session_respond"),
+    path("chat/sessions/<str:session_id>/stop/", views.chat_session_stop, name="chat_session_stop"),
     path("chat/sessions/<str:session_id>/delete/", views.chat_session_delete, name="chat_session_delete"),
     path("chat/sessions/<str:session_id>/", views.chat_session_detail, name="chat_session_detail"),
 

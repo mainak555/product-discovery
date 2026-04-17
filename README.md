@@ -23,11 +23,13 @@ pip install -r requirements.txt
 # 3. Configure environment
 #    Edit .env with your MongoDB URI and admin secret key
 
-# 4. Run the development server
-python manage.py runserver
+# 4. Run the development server (ASGI — required for SSE streaming)
+uvicorn config.asgi:application --reload --port 8000
 ```
 
 Open **http://localhost:8000** in your browser.
+
+> `python manage.py runserver` also works but is single-threaded; SSE runs will block all other requests while an agent is executing.
 
 ---
 
@@ -40,6 +42,8 @@ docker build -t product-discovery .
 # Run (uses .env file for configuration)
 docker run -p 8000:8000 --env-file .env product-discovery
 ```
+
+The container runs `uvicorn` (ASGI) by default, which is required for SSE streaming.
 
 ---
 
@@ -68,4 +72,5 @@ See [AGENTS.md](AGENTS.md) for full architecture and development instructions.
 
 - Supported agent models are defined in `agent_models.json` at the repository root.
 - For Azure models, the model key is the deployment name. Each Azure model entry stores its `endpoint` URL (and optional `api_version`) in `agent_models.json`; API keys are env-only.
-- The future AutoGen runtime lives in the root `agents/` package, separate from the Django `server/` app.
+- The AutoGen runtime lives in the root `agents/` package, separate from the Django `server/` app.
+- Agent execution is streamed over SSE (`/chat/sessions/<id>/run/`). The server **must** run under ASGI (`uvicorn`) for real-time streaming; WSGI will buffer the entire response before sending.

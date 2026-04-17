@@ -218,6 +218,8 @@ def normalize_chat_session(doc):
         "description": doc.get("description", ""),
         "created_at": created_at,
         "discussion": doc.get("discussion", []),
+        "status": doc.get("status", "idle"),
+        "current_round": doc.get("current_round", 0),
     }
 
 
@@ -230,9 +232,34 @@ def create_chat_session(project_id, description):
         "description": cleaned["description"],
         "created_at": datetime.now(timezone.utc),
         "discussion": [],
+        "status": "idle",
+        "current_round": 0,
     }
     col.insert_one(doc)
     return normalize_chat_session(doc)
+
+
+def set_session_status(session_id, status):
+    """Set status (and optionally increment round) on a chat session."""
+    try:
+        oid = ObjectId(session_id)
+    except (InvalidId, TypeError):
+        return
+    col = get_collection(CHAT_SESSIONS_COLLECTION)
+    update = {"$set": {"status": status}}
+    if status == "awaiting_input":
+        update["$inc"] = {"current_round": 1}
+    col.update_one({"_id": oid}, update)
+
+
+def append_messages(session_id, messages):
+    """Append a list of message dicts to session discussion."""
+    try:
+        oid = ObjectId(session_id)
+    except (InvalidId, TypeError):
+        return
+    col = get_collection(CHAT_SESSIONS_COLLECTION)
+    col.update_one({"_id": oid}, {"$push": {"discussion": {"$each": messages}}})
 
 
 def list_chat_sessions(project_id):

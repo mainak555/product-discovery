@@ -85,8 +85,9 @@
                     autocomplete="off"></textarea>
           <button class="btn btn--primary chat-send-btn" id="chat-send-btn" title="Send">
             ↑
-          </button>
-        </div>
+          </button>          <button class="btn btn--danger chat-stop-btn" id="chat-stop-btn" title="Stop" hidden>
+            &#x25A0;
+          </button>        </div>
 
       </div>
     </div>
@@ -144,6 +145,8 @@
   </div>
 
   <input type="hidden" id="active-project-id" value="">
+  <input type="hidden" id="active-session-id" value="">
+  <input type="hidden" id="csrf-token-value" value="{{ csrf_token }}">
 
   <script src="{% static 'server/js/app.js' %}"></script>
 </body>
