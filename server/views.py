@@ -394,6 +394,16 @@ async def chat_session_run(request, session_id):
 
         pending_messages = []
 
+        # Persist the human's message (initial task or gate feedback) to the discussion.
+        if task:
+            human_name = project.get("human_gate", {}).get("name") or "You"
+            pending_messages.append({
+                "agent_name": human_name,
+                "role": "user",
+                "content": task,
+                "timestamp": datetime.now(timezone.utc).strftime("%H:%M"),
+            })
+
         try:
             async for msg in team.run_stream(
                 task=task,

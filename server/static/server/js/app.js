@@ -584,6 +584,17 @@ document.addEventListener("DOMContentLoaded", function () {
       var text = ta ? ta.value.trim() : "";
       if (!text) { ta && ta.focus(); return; }
       panel.remove();
+      var fbTs = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      var fbHtml = (typeof marked !== "undefined") ? marked.parse(text) : "<p>" + text.replace(/</g, "&lt;") + "</p>";
+      appendBubble(
+        '<div class="chat-bubble chat-bubble--human">'
+        + '<div class="chat-bubble__meta">'
+        + '<span class="chat-bubble__name">You</span>'
+        + '<span class="chat-bubble__time">' + fbTs + '</span>'
+        + '</div>'
+        + '<div class="chat-bubble__content">' + fbHtml + '</div>'
+        + '</div>'
+      );
       sendRespond("feedback", text).then(function (d) {
         if (d.status === "ok") startRun(d.task || text);
       });
