@@ -2,19 +2,24 @@
   "claude-3-7-sonnet": {
     "provider": "anthropic"
   },
+  "claude-sonnet-4-6": {
+    "provider": "azure_anthropic",
+    "endpoint": "https://ml-mkr7cej8-eastus2.services.ai.azure.com/anthropic/"
+  },
   "gemini-2.5-flash": {
     "provider": "google"
   },
-  "gemini-2.5-pro": {
-    "provider": "google"
-  },
   "gpt-4.1": {
-    "provider": "openai"
-  },
-  "gpt-4.1-mini": {
-    "provider": "openai"
+    "provider": "azure_openai",
+    "endpoint": "https://cmazfoundry.cognitiveservices.azure.com/",
+    "api_version": "2024-12-01-preview"
   },
   "gpt-4o": {
     "provider": "openai"
+  },
+  "gpt-5.4-mini": {
+    "provider": "azure_openai",
+    "endpoint": "https://cmazfoundry.cognitiveservices.azure.com/",
+    "api_version": "2024-12-01-preview"
   }
 }

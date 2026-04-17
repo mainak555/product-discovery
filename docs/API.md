@@ -39,6 +39,12 @@ All routes are under the `server` app namespace.
 
 **Error response**: `<div class="alert alert-error">message</div>` with status 400 or 403
 
+Model runtime notes:
+- Model provider metadata is sourced from `agent_models.json` in the root.
+- Runtime client creation expects provider keys in environment variables: `<PROVIDER>_API_KEY`.
+- Azure models additionally require `AZURE_API_URL`.
+- For Azure entries, model keys are deployment names.
+
 ## MongoDB Collection
 
 **Collection**: `project_settings`

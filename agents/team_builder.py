@@ -12,7 +12,7 @@ def build_agent_runtime_spec(agent_config: dict) -> dict:
         "name": agent_config["name"],
         "model_client": build_model_client(
             agent_config["model"],
-            temperature=agent_config.get("temperature", 0.7),
+            temperature=agent_config.get("temperature", 0.6),
         ),
         "system_message": resolve_system_prompt(agent_config.get("system_prompt")),
     }
