@@ -11,6 +11,11 @@
       Home
     </a>
 
+    <!-- Configurations -->
+    <a class="btn btn--primary" href="{% url 'server:configurations_page' %}">
+      Configurations
+    </a>
+
     <!-- Secret Key is attached to HTMX requests by app.js -->
     <div class="header__auth">
       <input type="password"
@@ -19,11 +24,5 @@
              placeholder="Secret Key"
              autocomplete="off">
     </div>
-
-    <!-- Configurations -->
-    <a class="btn btn--primary" href="{% url 'server:configurations_page' %}">
-      Configurations
-    </a>
-
   </div>
 </header>

@@ -173,7 +173,6 @@ document.addEventListener("DOMContentLoaded", function () {
   var chatMessages = document.getElementById("chat-messages");
   var chatInput = document.getElementById("chat-input");
   var chatSendBtn = document.getElementById("chat-send-btn");
-  var resetChatBtn = document.getElementById("reset-chat-btn");
   var chatProjectBtn = document.getElementById("chat-project-btn");
 
   // Only wire up when chat elements exist (home page only)
@@ -246,31 +245,6 @@ document.addEventListener("DOMContentLoaded", function () {
       chatInput.value = "";
       chatInput.style.height = "auto";
       chatInput.focus();
-    });
-  }
-
-  // -----------------------------------------------------------------------
-  // Reset chat
-  // -----------------------------------------------------------------------
-  if (resetChatBtn) {
-    resetChatBtn.addEventListener("click", function () {
-      chatMessages.innerHTML = "";
-
-      // Restore welcome screen
-      var welcome = document.createElement("div");
-      welcome.className = "chat-welcome";
-      welcome.innerHTML = [
-        '<div class="chat-welcome__icon">\uD83E\uDD16</div>',
-        '<h2 class="chat-welcome__title">Product Discovery</h2>',
-        '<p class="chat-welcome__subtitle">Select a project and start a conversation with your AI agents.</p>'
-      ].join("");
-      chatMessages.appendChild(welcome);
-
-      // Reset project button label
-      if (chatProjectBtn) {
-        chatProjectBtn.textContent = "Projects \u25BE";
-        chatProjectBtn.dataset.activeProject = "";
-      }
     });
   }
 
