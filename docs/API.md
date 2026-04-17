@@ -32,8 +32,12 @@ All routes are under the `server` app namespace.
 - `human_gate[enabled]` — `"on"` if checked
 - `human_gate[name]` — string
 - `human_gate[interaction_mode]` — `approve_reject | feedback`
-- `team[type]` — currently `round_robin`
+- `team[type]` — `round_robin` | `selector`
 - `team[max_iterations]` — integer string
+- `team[model]` — model name (required when `team[type]=selector`)
+- `team[system_prompt]` — routing prompt string; supports `{roles}`, `{history}`, `{participants}` (required when `team[type]=selector`)
+- `team[temperature]` — float string (default `0.0`; only used for selector)
+- `team[allow_repeated_speaker]` — `"on"` if checked (default on; only used for selector)
 
 **Success response**: HTML partial (`config_form.html`) with `HX-Trigger: refreshSidebar`
 
@@ -68,8 +72,12 @@ Model runtime notes:
     "interaction_mode": "approve_reject"
   },
   "team": {
-    "type": "round_robin",
-    "max_iterations": 5
+    "type": "round_robin | selector",
+    "max_iterations": 5,
+    "model": "string (selector only)",
+    "system_prompt": "string (selector only)",
+    "temperature": 0.0,
+    "allow_repeated_speaker": true
   }
 }
 ```

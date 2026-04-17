@@ -60,6 +60,29 @@ def get_agent_model_metadata(model_name: str) -> dict:
     return load_agent_models().get(model_name, {})
 
 
-def get_default_system_prompt() -> str:
+SELECTOR_AGENT_PROMPT = """Select an agent to perform the next task.
+
+{roles}
+
+Current conversation context:
+{history}
+
+Read the above conversation, then select an agent from {participants} to perform the next task.
+
+Routing guidelines:
+- Select the agent whose role and expertise best matches the current sub-task.
+- Do not select the same agent consecutively unless no other agent is appropriate.
+- If the conversation has just started, select the agent best suited to decompose or initiate the task.
+- If the current agent has finished their contribution, select the next most relevant agent.
+
+Only select one agent. Reply with the agent name only."""
+
+
+def default_system_prompt_hint() -> str:
     """Return the default editable system prompt template."""
     return DEFAULT_SYSTEM_PROMPT
+
+
+def selector_prompt_hint() -> str:
+    """Return the example selector routing prompt shown as a UI hint."""
+    return SELECTOR_AGENT_PROMPT

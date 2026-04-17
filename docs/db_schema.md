@@ -1,0 +1,130 @@
+# DB Schema — Canonical Reference
+
+## Enforcement Rule
+
+**Attribute names must be identical across all layers.** This file is the single source of
+truth. Before adding or renaming any field, update this document first, then propagate the
+exact same name through every layer listed below:
+
+| Layer | Location | How it uses the name |
+|-------|----------|----------------------|
+| **DB document** | MongoDB `project_settings` | Stored key |
+| **Validation** | `server/schemas.py` — `validate_team()`, `validate_agent()` | `data.get("<name>")` and `cleaned["<name>"]` |
+| **Normalisation** | `server/services.py` — `normalize_project()` | `raw_team.get("<name>", …)` / `raw_agent.get("<name>", …)` |
+| **Form parsing** | `server/views.py` — `_build_project_data()` | `post_data.get("team[<name>]")` or `post_data.get("agents[n][<name>]")` |
+| **Templates** | `server/templates/server/partials/config_form.html`, `config_readonly.html`, `_agent_card.html` | `name="team[<name>]"` / `project.team.<name>` |
+| **Runtime** | `agents/team_builder.py` — `build_team()`, `build_agent_runtime_spec()` | `team_cfg.get("<name>")` / `agent_config.get("<name>")` |
+
+Cross-references: [docs/API.md](API.md) (form fields + HTTP schema), [AGENTS.md](../AGENTS.md) rules 1–5.
+
+---
+
+## Collection: `project_settings`
+
+```jsonc
+{
+  // ── Top-level ─────────────────────────────────────────────────────────────
+  "project_name": "string (unique, used as URL slug)",
+  "objective":    "string — injected into every agent system prompt and selector system prompt at runtime",
+
+  // ── Assistant agents ──────────────────────────────────────────────────────
+  "agents": [
+    {
+      "name":          "string — must be a valid Python identifier",
+      "model":         "string — must match an entry in agent_models.json",
+      "system_prompt": "string — non-empty; project objective is appended at runtime",
+      "temperature":   0.7   // float, 0.0–2.0
+    }
+    // ...one entry per assistant agent
+  ],
+
+  // ── Human gate (optional) ─────────────────────────────────────────────────
+  "human_gate": {
+    "enabled":          true,           // bool
+    "name":             "string",       // required when enabled=true
+    "interaction_mode": "approve_reject" // "approve_reject" | "feedback"
+  },
+
+  // ── Team ──────────────────────────────────────────────────────────────────
+  "team": {
+    "type":           "round_robin",  // "round_robin" | "selector"
+    "max_iterations": 5,              // int ≥ 1; ≤ 10 when human gate disabled
+
+    // ── Selector-only fields (omitted / ignored for round_robin) ────────────
+    "model":         "string — must match an entry in agent_models.json",
+    "system_prompt": "string — routing instructions; {roles}, {history}, {participants} expanded by AutoGen",
+    "temperature":   0.0,  // float, 0.0–2.0; 0.0 = deterministic routing (recommended)
+    "allow_repeated_speaker": true  // bool
+  }
+}
+```
+
+---
+
+## Field Notes
+
+### `agents[].name`
+Stored exactly as the sanitised Python identifier produced by `validate_agent()`. Spaces
+and hyphens are converted to underscores; all other non-word characters are stripped.
+
+### `agents[].temperature` vs `team.temperature`
+Both fields are named `temperature` — one lives under each agent, the other under `team`
+(selector only). They are independent: agent temperature controls generation quality;
+selector temperature controls routing determinism.
+
+### `team.model` / `team.system_prompt` (selector only)
+These fields share the same names as the per-agent fields intentionally — the selector is
+logically "the routing agent". The `selector_` prefix was dropped to maintain consistent
+naming across agent and team layers.
+
+### `team.max_iterations`
+Stored on `team`, not at the top level. `normalize_project()` falls back to the legacy
+top-level `max_iterations` for backward compatibility with old documents.
+
+---
+
+## Validation Constraints
+
+| Field | Type | Constraint |
+|-------|------|------------|
+| `project_name` | str | non-empty, unique in collection |
+| `objective` | str | any string (may be empty) |
+| `agents[].name` | str | valid Python identifier after sanitisation |
+| `agents[].model` | str | must be in `agent_models.json` |
+| `agents[].system_prompt` | str | non-empty |
+| `agents[].temperature` | float | 0.0 ≤ value ≤ 2.0 |
+| `human_gate.interaction_mode` | str | `"approve_reject"` or `"feedback"` |
+| `human_gate.name` | str | required when `enabled=true` |
+| `team.type` | str | `"round_robin"` or `"selector"` |
+| `team.max_iterations` | int | ≥ 1; ≤ 10 when `human_gate.enabled=false` |
+| `team.model` | str | required for selector; must be in `agent_models.json` |
+| `team.system_prompt` | str | required for selector; non-empty |
+| `team.temperature` | float | 0.0 ≤ value ≤ 2.0 (default `0.0`) |
+| `team.allow_repeated_speaker` | bool | default `true` |
+
+---
+
+## MongoDB Migration Notes
+
+When renaming a field, issue an `updateMany` on the collection before deploying:
+
+```js
+// Example: renaming selector_model → model and selector_prompt → system_prompt
+db.project_settings.updateMany(
+  { "team.type": "selector" },
+  [{
+    $set: {
+      "team.model":         "$team.selector_model",
+      "team.system_prompt": "$team.selector_prompt",
+      "team.temperature":   { $ifNull: ["$team.temperature", 0.0] }
+    }
+  }]
+);
+db.project_settings.updateMany(
+  { "team.type": "selector" },
+  { $unset: { "team.selector_model": "", "team.selector_prompt": "" } }
+);
+```
+
+There is **no automatic backward-compat fallback** in `normalize_project()`. Any document
+that still uses old field names will render empty strings for those fields until migrated.

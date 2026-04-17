@@ -27,6 +27,16 @@ See [docs/UI.md](docs/UI.md) for:
 - Template hierarchy (base → partials)
 - CSS class naming conventions
 
+## Agent Teams & Runtime
+
+See [docs/agent_teams.md](docs/agent_teams.md) for:
+- `RoundRobinGroupChat` vs `SelectorGroupChat` — when to use each
+- Selector prompt placeholders (`{roles}`, `{history}`, `{participants}`)
+- How project `objective` is injected into agent prompts and the selector prompt
+- Human gate state machine and approve/feedback resume flow
+- Runtime team cache lifecycle (`runtime.py`)
+- How to add a new team type end-to-end
+
 ## Key Rules
 
 1. **Business logic lives in `server/services.py`** — views are thin controllers

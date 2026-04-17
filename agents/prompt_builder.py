@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from server.model_catalog import get_default_system_prompt
 
+def resolve_system_prompt(system_prompt: str, objective: str = "") -> str:
+    """Return the agent system prompt with the project objective appended.
 
-def resolve_system_prompt(system_prompt: str | None) -> str:
-    """Return the saved system prompt or the default template."""
+    The system_prompt is used as-is (schemas enforce it is non-empty).
+    If objective is provided it is appended after the persona content so
+    the role line (line 1) always remains the agent's identity anchor.
+    """
     cleaned = (system_prompt or "").strip()
-    return cleaned or get_default_system_prompt()
+    if objective:
+        cleaned = f"{cleaned}\n\n---\nProject Objective:\n{objective}"
+    return cleaned

@@ -2,7 +2,7 @@
 
 from .model_catalog import get_agent_model_names
 
-TEAM_TYPES = ("round_robin",)
+TEAM_TYPES = ("round_robin", "selector")
 HUMAN_GATE_INTERACTION_MODES = ("approve_reject", "feedback")
 
 
@@ -114,10 +114,48 @@ def validate_team(data, human_gate_enabled):
             "'team.max_iterations' cannot be greater than 10 when human gate is disabled."
         )
 
-    return {
+    cleaned = {
         "type": team_type,
         "max_iterations": max_iterations,
     }
+
+    if team_type == "selector":
+        from .model_catalog import get_agent_model_names
+        available_models = get_agent_model_names()
+
+        model = (data.get("model") or "").strip()
+        if not model:
+            raise ValueError("'team.model' is required for Selector team type.")
+        if model not in available_models:
+            raise ValueError(
+                f"'team.model' must be one of {', '.join(available_models)}."
+            )
+
+        system_prompt = (data.get("system_prompt") or "").strip()
+        if not system_prompt:
+            raise ValueError("'team.system_prompt' is required for Selector team type.")
+
+        raw_temperature = data.get("temperature", 0.0)
+        try:
+            temperature = float(raw_temperature)
+            if not (0.0 <= temperature <= 2.0):
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise ValueError("'team.temperature' must be a number between 0 and 2.")
+
+        allow_repeated_raw = data.get("allow_repeated_speaker", True)
+        # Checkbox sends "on" from HTML form, or bool from API
+        if isinstance(allow_repeated_raw, str):
+            allow_repeated_speaker = allow_repeated_raw.lower() in ("on", "true", "1", "yes")
+        else:
+            allow_repeated_speaker = bool(allow_repeated_raw)
+
+        cleaned["model"] = model
+        cleaned["system_prompt"] = system_prompt
+        cleaned["temperature"] = temperature
+        cleaned["allow_repeated_speaker"] = allow_repeated_speaker
+
+    return cleaned
 
 
 def validate_chat_session(data):

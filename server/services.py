@@ -14,7 +14,7 @@ from bson.errors import InvalidId
 from pymongo.errors import DuplicateKeyError
 
 from .db import get_collection, ensure_indexes, CHAT_SESSIONS_COLLECTION
-from .model_catalog import get_agent_model_names, get_default_system_prompt
+from .model_catalog import get_agent_model_names, default_system_prompt_hint, selector_prompt_hint as _get_selector_prompt_hint
 from .schemas import validate_project, validate_chat_session
 
 
@@ -33,7 +33,12 @@ def get_available_models():
 
 def get_system_prompt_template():
     """Return the default editable system prompt template."""
-    return get_default_system_prompt()
+    return default_system_prompt_hint()
+
+
+def get_selector_prompt_hint():
+    """Return the example selector routing prompt shown as a UI hint."""
+    return _get_selector_prompt_hint()
 
 
 def normalize_project(project):
@@ -99,6 +104,10 @@ def normalize_project(project):
     team = {
         "type": (raw_team.get("type") or "round_robin").strip() or "round_robin",
         "max_iterations": raw_team.get("max_iterations", project.get("max_iterations", 5)),
+        "model": raw_team.get("model", ""),
+        "system_prompt": raw_team.get("system_prompt", ""),
+        "temperature": _coerce_temperature(raw_team.get("temperature", 0.0)),
+        "allow_repeated_speaker": raw_team.get("allow_repeated_speaker", True),
     }
 
     return {
@@ -199,6 +208,27 @@ def delete_project(project_id):
     result = col.delete_one({"_id": oid})
     if result.deleted_count == 0:
         raise ValueError("Project not found.")
+
+
+def clone_project(project_id):
+    """
+    Clone an existing project as '{name} - Copy'.
+
+    Returns the newly created project document.
+    Raises ValueError if the source project is not found or the cloned name is a duplicate.
+    """
+    source = get_project(project_id)
+    if source is None:
+        raise ValueError("Project not found.")
+
+    data = {
+        "project_name": f"{source['project_name']} - Copy",
+        "objective": source["objective"],
+        "agents": source["agents"],
+        "human_gate": source["human_gate"],
+        "team": source["team"],
+    }
+    return create_project(data)
 
 
 # ---------------------------------------------------------------------------

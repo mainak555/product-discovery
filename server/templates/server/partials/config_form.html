@@ -99,7 +99,7 @@
           <select id="human_gate_interaction_mode"
                   name="human_gate[interaction_mode]"
                   class="input">
-            <!--option value="approve_reject" {% if project.human_gate.interaction_mode|default:'approve_reject' == 'approve_reject' %}selected{% endif %}>Approve / Reject</option-->
+            <option value="approve_reject" {% if project.human_gate.interaction_mode|default:'approve_reject' == 'approve_reject' %}selected{% endif %}>Approve / Reject</option>
             <option value="feedback" {% if project.human_gate.interaction_mode == 'feedback' %}selected{% endif %}>Feedback</option>
           </select>
         </div>
@@ -117,6 +117,7 @@
         <label for="team_type">Team Type</label>
         <select id="team_type" name="team[type]" class="input">
           <option value="round_robin" {% if project.team.type|default:'round_robin' == 'round_robin' %}selected{% endif %}>Round Robin</option>
+          <option value="selector" {% if project.team.type == 'selector' %}selected{% endif %}>Selector</option>
         </select>
       </div>
 
@@ -131,9 +132,57 @@
                max="100">
       </div>
     </div>
+
+    <!-- Selector-specific fields — shown only when team type = selector -->
+    <div id="selector-fields" {% if project.team.type != 'selector' %}hidden{% endif %}>
+      <div class="form-group">
+        <label for="team-model">Selector Model</label>
+        <select id="team-model" name="team[model]" class="input">
+          <option value="" disabled>— choose a model —</option>
+          {% for m in model_names %}
+            <option value="{{ m }}" {% if project.team.model == m %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+        <small class="form-hint">Model used exclusively for agent routing decisions.</small>
+      </div>
+
+      <div class="form-group">
+        <label for="team-temperature">Selector Temperature</label>
+        <input type="number"
+               id="team-temperature"
+               name="team[temperature]"
+               class="input input--sm"
+               value="{{ project.team.temperature|default:'0.0' }}"
+               step="0.1"
+               min="0"
+               max="2">
+        <small class="form-hint">0.0 = deterministic routing (recommended).</small>
+      </div>
+
+      <div class="form-group">
+        <label for="team-system-prompt">Selector Prompt</label>
+        <textarea id="team-system-prompt"
+                  name="team[system_prompt]"
+                  class="input input--textarea input--sm input--prompt"
+                  rows="12"
+                  placeholder="Paste the selector prompt…">{% if project.team.system_prompt %}{{ project.team.system_prompt }}{% else %}{{ selector_prompt_hint }}{% endif %}</textarea>
+        <small class="form-hint">Use <code>{roles}</code>, <code>{history}</code>, <code>{participants}</code> placeholders.</small>
+      </div>
+
+      <div class="form-group form-group--inline">
+        <label>
+          <input type="checkbox"
+                 id="allow_repeated_speaker"
+                 name="team[allow_repeated_speaker]"
+                 {% if project.team.allow_repeated_speaker|default:True %}checked{% endif %}>
+          Allow repeated speaker
+        </label>
+      </div>
+    </div>
+
   </fieldset>
 
-  <!-- Submit / Clear -->
+  <!-- Submit / Clear / Clone -->
   <div class="form-actions">
     <button type="submit" class="btn btn--primary">
       {% if mode == "create" %}Create{% else %}Update{% endif %}
@@ -144,6 +193,14 @@
             hx-swap="innerHTML">
       Clear
     </button>
+    {% if mode == "update" %}
+    <button type="button" class="btn btn--success js-requires-secret"
+            hx-post="{% url 'server:project_clone' project.project_id %}"
+            hx-target="#main-content"
+            hx-swap="innerHTML">
+      Clone
+    </button>
+    {% endif %}
   </div>
 
 </form>

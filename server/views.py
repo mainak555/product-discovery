@@ -37,6 +37,7 @@ def _get_form_context(project=None, mode="create", success=None):
         "mode": mode,
         "model_names": services.get_available_models(),
         "default_system_prompt": services.get_system_prompt_template(),
+        "selector_prompt_hint": services.get_selector_prompt_hint(),
     }
     if success:
         context["success"] = success
@@ -83,6 +84,10 @@ def _build_project_data(post_data):
         "team": {
             "type": post_data.get("team[type]", "round_robin").strip(),
             "max_iterations": post_data.get("team[max_iterations]", "5").strip(),
+            "model": post_data.get("team[model]", "").strip(),
+            "system_prompt": post_data.get("team[system_prompt]", "").strip(),
+            "temperature": post_data.get("team[temperature]", "0.0").strip() or "0.0",
+            "allow_repeated_speaker": post_data.get("team[allow_repeated_speaker]"),
         },
     }
 
@@ -178,6 +183,32 @@ def project_delete(request, project_id):
     # Return empty string so hx-swap="outerHTML" removes the <li>,
     # then trigger a full sidebar refresh for consistency.
     response = HttpResponse("")
+    response["HX-Trigger"] = "refreshSidebar"
+    return response
+
+
+@require_POST
+def project_clone(request, project_id):
+    """HTMX partial — clone a project as '{name} - Copy' (POST only, secret-key gated)."""
+    if not _has_valid_secret(request):
+        return HttpResponse(
+            '<div class="alert alert-error">Unauthorized. Enter a valid Secret Key in the header before cloning.</div>',
+            status=403,
+        )
+
+    try:
+        project = services.clone_project(project_id)
+    except ValueError as e:
+        return HttpResponse(
+            f'<div class="alert alert-error">{e}</div>',
+            status=400,
+        )
+
+    response = render(
+        request,
+        "server/partials/config_form.html",
+        _get_form_context(project=project, mode="update", success=f"Cloned as \u2018{project['project_name']}\u2019!"),
+    )
     response["HX-Trigger"] = "refreshSidebar"
     return response
 
@@ -293,10 +324,14 @@ def chat_session_create(request):
     )
     oob_list = f'<div id="chat-history-list" hx-swap-oob="innerHTML">{list_html}</div>'
     oob_messages = f'<div id="chat-messages" hx-swap-oob="innerHTML">{history_html}</div>'
+    # Set active-session-id directly in the DOM — more reliable than an xhr header
+    sid = session["session_id"]
+    oob_session_id = (
+        f'<input id="active-session-id" hx-swap-oob="outerHTML" type="hidden" value="{sid}">'
+    )
     # Primary content: empty (feedback div cleared, modal closes via trigger)
-    response = HttpResponse(oob_list + oob_messages, content_type="text/html")
+    response = HttpResponse(oob_list + oob_messages + oob_session_id, content_type="text/html")
     response["HX-Trigger"] = "chatSessionCreated"
-    response["HX-Session-Id"] = session["session_id"]
     return response
 
 
@@ -377,7 +412,16 @@ async def chat_session_run(request, session_id):
         return HttpResponse(json.dumps({"error": "Project not found"}), status=404,
                             content_type="application/json")
 
-    task = request.POST.get("task", "").strip() or None
+    task = request.POST.get("task", "").strip()
+
+    # First run must have a task; resume (approve) may send empty string
+    is_first_run = session["status"] == "idle" and not session.get("discussion")
+    if is_first_run and not task:
+        return HttpResponse(
+            json.dumps({"error": "'task' is required to start a conversation."}),
+            status=400, content_type="application/json",
+        )
+
     await asyncio.to_thread(services.set_session_status, session_id, "running")
 
     async def event_stream():
@@ -406,7 +450,7 @@ async def chat_session_run(request, session_id):
 
         try:
             async for msg in team.run_stream(
-                task=task,
+                task=task if task else None,
                 cancellation_token=cancel_token,
             ):
                 if isinstance(msg, TaskResult):

@@ -22,6 +22,9 @@ urlpatterns = [
     # HTMX partial — delete a project (POST only)
     path("projects/<str:project_id>/delete/", views.project_delete, name="project_delete"),
 
+    # HTMX partial — clone a project as '{name} - Copy' (POST only)
+    path("projects/<str:project_id>/clone/", views.project_clone, name="project_clone"),
+
     # HTMX partials — single project (GET = detail, POST = update)
     path("projects/<str:project_id>/", views.project_detail, name="project_detail"),
 

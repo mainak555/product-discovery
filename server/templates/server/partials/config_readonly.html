@@ -50,6 +50,16 @@
       <strong>Type:</strong> {{ project.team.type }} &nbsp;|&nbsp;
       <strong>Max Iterations:</strong> {{ project.team.max_iterations }}
     </p>
+    {% if project.team.type == 'selector' %}
+      <p>
+        <strong>Model:</strong> {{ project.team.model }} &nbsp;|&nbsp;
+        <strong>Temperature:</strong> {{ project.team.temperature }}
+      </p>
+      <div class="agent-card__detail">
+        <strong>System Prompt:</strong>
+        <pre class="agent-card__prompt">{{ project.team.system_prompt }}</pre>
+      </div>
+    {% endif %}
   </div>
 
   <div class="config-readonly__hint">

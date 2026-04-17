@@ -18,7 +18,7 @@ document.addEventListener("DOMContentLoaded", function () {
     var keyInput = getSecretKeyInput();
     var hasSecret = !!(keyInput && keyInput.value.trim());
 
-    document.querySelectorAll(".config-form button[type='submit']").forEach(function (button) {
+    document.querySelectorAll(".config-form button[type='submit'], .config-form .js-requires-secret").forEach(function (button) {
       button.disabled = !hasSecret;
       button.title = hasSecret ? "" : "Enter the Secret Key in the header before saving.";
     });
@@ -56,9 +56,23 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
+  function syncTeamTypeFields() {
+    var teamTypeSelect = document.getElementById("team_type");
+    var selectorFields = document.getElementById("selector-fields");
+    if (!teamTypeSelect || !selectorFields) return;
+
+    var isSelector = teamTypeSelect.value === "selector";
+    selectorFields.hidden = !isSelector;
+
+    selectorFields.querySelectorAll("input, select, textarea").forEach(function (field) {
+      field.disabled = !isSelector;
+    });
+  }
+
   function syncFormState() {
     syncHumanGateFields();
     syncMaxIterationsLimit();
+    syncTeamTypeFields();
     updateSubmitState();
   }
 
@@ -143,9 +157,13 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   document.body.addEventListener("change", function (e) {
-    if (e.target.id !== "human-gate-enabled") return;
-    syncHumanGateFields();
-    syncMaxIterationsLimit();
+    if (e.target.id === "human-gate-enabled") {
+      syncHumanGateFields();
+      syncMaxIterationsLimit();
+    }
+    if (e.target.id === "team_type") {
+      syncTeamTypeFields();
+    }
   });
 
   // -----------------------------------------------------------------------
@@ -199,8 +217,9 @@ document.addEventListener("DOMContentLoaded", function () {
   if (agentModalOverlay) agentModalOverlay.addEventListener("click", closeAgentModal);
 
   document.body.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && agentPromptModal && !agentPromptModal.hidden) {
-      closeAgentModal();
+    if (e.key === "Escape") {
+      if (agentPromptModal && !agentPromptModal.hidden) closeAgentModal();
+      if (newSessionModal && !newSessionModal.hidden) closeModal();
     }
   });
 
@@ -280,6 +299,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function closeModal() {
     if (newSessionModal) newSessionModal.hidden = true;
+    _pendingTask = null;
   }
 
   if (newChatBtn) {
@@ -305,8 +325,8 @@ document.addEventListener("DOMContentLoaded", function () {
   if (modalCancelBtn) modalCancelBtn.addEventListener("click", closeModal);
   if (modalOverlay) modalOverlay.addEventListener("click", closeModal);
 
-  // Close modal when HTMX signals chatSessionCreated
-  document.body.addEventListener("chatSessionCreated", closeModal);
+  // Close modal when HTMX signals chatSessionCreated — handled in the full
+  // chatSessionCreated listener below; this stub is intentionally removed.
 
   // Allow HTMX to swap 4xx error responses into #new-session-form-feedback
   // (by default HTMX 1.x drops non-2xx responses without swapping)
@@ -351,6 +371,7 @@ document.addEventListener("DOMContentLoaded", function () {
   // -----------------------------------------------------------------------
 
   var _activeReader = null; // ReadableStreamDefaultReader during a run
+  var _pendingTask   = null; // task text queued before a session existed
 
   function setRunningState(running) {
     if (chatInput)   { chatInput.disabled = running; }
@@ -367,6 +388,22 @@ document.addEventListener("DOMContentLoaded", function () {
     }
     msgs.insertAdjacentHTML("beforeend", html);
     chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function appendHumanBubble(text) {
+    var ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    var contentHtml = (typeof marked !== "undefined")
+      ? marked.parse(text)
+      : "<p>" + text.replace(/</g, "&lt;") + "</p>";
+    appendBubble(
+      '<div class="chat-bubble chat-bubble--human">'
+      + '<div class="chat-bubble__meta">'
+      + '<span class="chat-bubble__name">You</span>'
+      + '<span class="chat-bubble__time">' + ts + '</span>'
+      + '</div>'
+      + '<div class="chat-bubble__content">' + contentHtml + '</div>'
+      + '</div>'
+    );
   }
 
   function appendStatusBadge(type) {
@@ -406,7 +443,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function startRun(task) {
     var sessionId = activeSessionIdInput ? activeSessionIdInput.value.trim() : "";
-    if (!sessionId) { alert("No active session."); return; }
+    if (!sessionId) { return; }
 
     var keyInput = getSecretKeyInput();
     var secretKey = keyInput ? keyInput.value.trim() : "";
@@ -508,21 +545,17 @@ document.addEventListener("DOMContentLoaded", function () {
       var text = chatInput.value.trim();
       if (!text) return;
 
-      // Append human bubble immediately
-      var ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      var humanContentHtml = (typeof marked !== "undefined")
-        ? marked.parse(text)
-        : "<p>" + text.replace(/</g, "&lt;") + "</p>";
-      appendBubble(
-        '<div class="chat-bubble chat-bubble--human">'
-        + '<div class="chat-bubble__meta">'
-        + '<span class="chat-bubble__name">You</span>'
-        + '<span class="chat-bubble__time">' + ts + '</span>'
-        + '</div>'
-        + '<div class="chat-bubble__content">' + humanContentHtml + '</div>'
-        + '</div>'
-      );
+      // No active session — open modal and queue the typed text
+      var sessionId = activeSessionIdInput ? activeSessionIdInput.value.trim() : "";
+      if (!sessionId) {
+        var projectId = activeProjectIdInput ? activeProjectIdInput.value.trim() : "";
+        if (!projectId) { alert("Select a project first."); return; }
+        _pendingTask = text;
+        openModal();
+        return;
+      }
 
+      appendHumanBubble(text);
       chatInput.value = "";
       chatInput.style.height = "auto";
       chatInput.focus();
@@ -640,14 +673,21 @@ document.addEventListener("DOMContentLoaded", function () {
     if (li && activeSessionIdInput) activeSessionIdInput.value = li.dataset.sessionId || "";
   });
 
-  // chatSessionCreated: modal close + set session id from response header
-  document.body.addEventListener("chatSessionCreated", function (e) {
+  // chatSessionCreated: close modal, then fire any queued pending task.
+  // Session ID is already in the DOM via OOB swap of #active-session-id.
+  document.body.addEventListener("chatSessionCreated", function () {
     closeModal();
-    // HX-Session-Id header carries the new session id (set by the create view)
-    var detail = e.detail || {};
-    if (detail.xhr) {
-      var sid = detail.xhr.getResponseHeader("HX-Session-Id");
-      if (sid && activeSessionIdInput) activeSessionIdInput.value = sid;
+    if (_pendingTask) {
+      var task = _pendingTask;
+      _pendingTask = null;
+      // Replace whatever the OOB swap left in #chat-messages with a clean
+      // history container so the first bubble lands in the right element.
+      if (chatMessages) {
+        chatMessages.innerHTML = '<div class="chat-history" id="chat-history-msgs"></div>';
+      }
+      appendHumanBubble(task);
+      if (chatInput) { chatInput.value = ""; chatInput.style.height = "auto"; }
+      startRun(task);
     }
   });
 

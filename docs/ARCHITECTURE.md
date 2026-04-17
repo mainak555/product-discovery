@@ -65,8 +65,8 @@ product-discovery/
 ### Root `agents/` Package — Runtime Integration
 - `agents/config_loader.py` reads the shared `agent_models.json` catalog.
 - `agents/factory.py` resolves provider-specific AutoGen model clients from model names.
-- `agents/prompt_builder.py` owns prompt defaults and prompt resolution.
-- `agents/team_builder.py` is the future handoff point for building AutoGen teams from saved configuration.
+- `agents/prompt_builder.py` resolves system prompts and appends the project objective.
+- `agents/team_builder.py` builds AutoGen teams (`RoundRobinGroupChat` or `SelectorGroupChat`) from saved configuration. The team type is read from `project["team"]["type"]`. Each `AssistantAgent` receives `description=` (line 1 of its resolved system message) so that `SelectorGroupChat`'s `{roles}` placeholder renders meaningful routing context.
 
 Provider client resolution in `agents/factory.py` (builder-per-provider pattern):
 - `openai`          → `OpenAIChatCompletionClient` — direct OpenAI API
