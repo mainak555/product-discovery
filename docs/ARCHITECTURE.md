@@ -71,11 +71,13 @@ product-discovery/
 Provider client resolution in `agents/factory.py` (builder-per-provider pattern):
 - `openai`          → `OpenAIChatCompletionClient` — direct OpenAI API
 - `anthropic`       → `AnthropicChatCompletionClient` — direct Anthropic API
-- `google`          → `GeminiChatCompletionClient` — direct Google Gemini API
+- `google`          → `OpenAIChatCompletionClient` — Google Gemini (OpenAI-compatible)
 - `azure_openai`    → `AzureOpenAIChatCompletionClient` — Azure AI Foundry OpenAI deployment
 - `azure_anthropic` → `AnthropicChatCompletionClient` with `base_url` — Anthropic model on Azure AI Foundry
 
 To add a new provider, define a `_build_<name>` function in `agents/factory.py` and add one entry to `_PROVIDER_BUILDERS`.
+
+See [docs/agent_factory.md](agent_factory.md) for the full `agent_models.json` schema, environment variable reference, `model_info` defaults, and per-provider constructor details.
 
 ## Conventions
 
@@ -84,6 +86,6 @@ To add a new provider, define a `_build_<name>` function in `agents/factory.py` 
 - **Provider endpoints**: Azure endpoint URLs are stored per-model in `agent_models.json` under the `endpoint` field. No endpoint env var is used; each Azure resource has its own URL.
 - **No Django ORM**: `DATABASES = {}`. Sessions use signed cookies.
 - **Secret key auth**: GET/POST HTMX requests can carry `X-App-Secret-Key`; invalid or missing keys get read-only views or rejected saves.
-- **Model catalog**: `agent_models.json` is keyed by model name/deployment name; provider stays internal to runtime code.
+- **Model catalog**: `agent_models.json` is keyed by model name; Azure deployments use the optional `deployment_name` field (defaults to model key). See [docs/agent_factory.md](agent_factory.md) for schema details.
 - **SCSS**: Compiled at request time in dev, offline in production.
 - **Template naming**: Partials in `partials/` subdirectory, prefixed with `_` for includes.

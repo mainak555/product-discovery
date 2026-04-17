@@ -12,6 +12,7 @@ Django SPA with HTMX, SCSS, and MongoDB (PyMongo).
 python -m venv .venv
 
 # Windows PowerShell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 .\.venv\Scripts\Activate.ps1
 
 # macOS/Linux

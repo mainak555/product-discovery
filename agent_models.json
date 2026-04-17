@@ -20,6 +20,7 @@
   "gpt-5.4-mini": {
     "provider": "azure_openai",
     "endpoint": "https://cmazfoundry.cognitiveservices.azure.com/",
-    "api_version": "2024-12-01-preview"
+    "api_version": "2024-12-01-preview",
+    "model": "gpt-5.4-mini-2026-03-17"
   }
 }
