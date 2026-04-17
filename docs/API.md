@@ -6,7 +6,7 @@ All routes are under the `server` app namespace.
 
 | Method | Path | View | Description |
 |--------|------|------|-------------|
-| `GET` | `/` | `index` | Full SPA page (base.html) |
+| `GET` | `/` | `index` | Full SPA page (config.html) |
 | `GET` | `/projects/` | `configurations_page` | Full configurations page (sidebar + create form preloaded) |
 | `GET` | `/projects/list/` | `project_list` | HTMX partial — sidebar project list |
 | `GET` | `/projects/new/` | `project_new` | HTMX partial — blank config form |

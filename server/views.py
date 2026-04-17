@@ -90,7 +90,7 @@ def _render_shell(request, projects=None, auto_open_create=False):
     """Render the full SPA shell. Passes projects so sidebar is server-rendered."""
     if projects is None:
         projects = services.list_projects()
-    return render(request, "server/base.html", {
+    return render(request, "server/config.html", {
         "auto_open_create": auto_open_create,
         "projects": projects,
         "model_names": services.get_available_models(),

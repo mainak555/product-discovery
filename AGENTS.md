@@ -37,6 +37,6 @@ See [docs/UI.md](docs/UI.md) for:
 6. **No Django ORM** — `DATABASES = {}`, sessions use signed cookies
 7. **`APP_SECRET_KEY`** gates write access — HTMX requests send it as `X-App-Secret-Key`
 8. **All env vars** read via `os.getenv()` with sensible defaults
-9. **Templates** use HTMX partials pattern: full page loads `base.html`, subsequent interactions swap partials into `#main-content` or `#sidebar-list`
+9. **Templates** use HTMX partials pattern: full page loads `config.html`, subsequent interactions swap partials into `#main-content` or `#sidebar-list`
 10. **SCSS** compiled by django-compressor + django-libsass
 11. **No test suite yet** — planned for a future phase

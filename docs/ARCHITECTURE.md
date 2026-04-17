@@ -15,7 +15,7 @@ product-discovery/
 │   ├── views.py         # HTMX view controllers (thin, delegates to services)
 │   ├── urls.py          # App URL routing
 │   ├── templates/server/
-│   │   ├── base.html               # Full SPA shell
+│   │   ├── config.html             # Full SPA shell
 │   │   └── partials/
 │   │       ├── header.html          # Header bar
 │   │       ├── sidebar.html         # Project list

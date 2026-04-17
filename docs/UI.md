@@ -21,7 +21,7 @@ The app is a single-page application using HTMX for partial page updates.
 
 ## HTMX Interaction Flow
 
-1. **Page load**: `base.html` renders the full shell and server-renders the sidebar list.
+1. **Page load**: `config.html` renders the full shell and server-renders the sidebar list.
 2. **Open project**: clicking a sidebar item or project dropdown entry sends `hx-get="/projects/<name>/"` and swaps `#main-content`.
 3. **Secret key handling**: `app.js` injects `X-App-Secret-Key` into every HTMX request when the header input has a value.
 4. **Readonly vs edit**: opening a project without a valid secret key returns `config_readonly.html`; opening it with a valid secret key returns `config_form.html`.
@@ -32,7 +32,7 @@ The app is a single-page application using HTMX for partial page updates.
 ## Template Hierarchy
 
 ```
-base.html                          ← Full HTML document, loaded once
+config.html                        ← Full HTML document, loaded once
 ├── partials/header.html           ← Included server-side via {% include %}
 ├── #sidebar-list                  ← Swapped by HTMX (sidebar.html)
 └── #main-content                  ← Swapped by HTMX:
