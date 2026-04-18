@@ -27,6 +27,14 @@ See [docs/UI.md](docs/UI.md) for:
 - Template hierarchy (base → partials)
 - CSS class naming conventions
 
+## Trello Integration
+
+See [docs/trello_integration.md](docs/trello_integration.md) for:
+- Architecture (trello_client → trello_service → trello_views + trello.js)
+- Project config schema and session token lifecycle
+- Auth flow, cascade dropdowns, and export pipeline
+- API endpoint reference
+
 ## Agent Teams & Runtime
 
 See [docs/agent_teams.md](docs/agent_teams.md) for:

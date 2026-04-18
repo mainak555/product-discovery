@@ -5,6 +5,7 @@
 ```
 product-discovery/
 ├── agents/              # Root AutoGen runtime package (model factory, team builder)
+│   └── integrations/    # Jira/Trello export clients + LLM extractor
 ├── agent_models.json    # Shared model catalog keyed by model name
 ├── config/              # Django project package (settings, root URLs, WSGI)
 ├── server/              # Main Django app

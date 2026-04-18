@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 from . import views
 
 app_name = "server"
@@ -37,4 +37,6 @@ urlpatterns = [
     path("chat/sessions/<str:session_id>/delete/", views.chat_session_delete, name="chat_session_delete"),
     path("chat/sessions/<str:session_id>/", views.chat_session_detail, name="chat_session_detail"),
 
+    # Trello integration
+    path("trello/", include("server.trello_urls")),
 ]

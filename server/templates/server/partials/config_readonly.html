@@ -62,6 +62,44 @@
     {% endif %}
   </div>
 
+  {% if project.integrations.enabled %}
+  <div class="config-readonly__section">
+    <h3>Integrations</h3>
+    {% if project.integrations.export_agent %}
+      <p><strong>Export Agent:</strong> {{ project.integrations.export_agent }}</p>
+    {% endif %}
+
+    {% if project.integrations.trello.enabled %}
+      <div class="agent-card agent-card--readonly">
+        <div class="agent-card__header">
+          <strong>Trello</strong>
+        </div>
+        <div class="agent-card__detail">
+          <strong>App Name:</strong> {{ project.integrations.trello.app_name }}
+        </div>
+        <div class="agent-card__detail">
+          <strong>API Key:</strong> {{ project.integrations.trello.api_key }}
+        </div>
+        {% if project.integrations.trello.default_workspace %}
+        <div class="agent-card__detail">
+          <strong>Workspace:</strong> {{ project.integrations.trello.default_workspace }}
+        </div>
+        {% endif %}
+        {% if project.integrations.trello.default_board_name %}
+        <div class="agent-card__detail">
+          <strong>Board:</strong> {{ project.integrations.trello.default_board_name }}
+        </div>
+        {% endif %}
+        {% if project.integrations.trello.default_list_name %}
+        <div class="agent-card__detail">
+          <strong>List:</strong> {{ project.integrations.trello.default_list_name }}
+        </div>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <div class="config-readonly__hint">
     <em>Enter Secret Key & reopen this project to edit.</em>
   </div>

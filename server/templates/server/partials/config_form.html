@@ -182,6 +182,123 @@
 
   </fieldset>
 
+  <!-- ====== INTEGRATIONS ====== -->
+  <fieldset class="form-group">
+    <legend>Integrations (Export)</legend>
+
+    <div class="form-group form-group--inline">
+      <label>
+        <input type="checkbox"
+               id="integrations-enabled"
+               name="integrations[enabled]"
+               {% if project.integrations.enabled %}checked{% endif %}>
+        Enable export integrations
+      </label>
+    </div>
+
+    <div id="integrations-fields" {% if not project.integrations.enabled %}hidden{% endif %}>
+
+      <div class="form-group">
+        <label for="integrations-export-agent">Export Agent</label>
+        <select id="integrations-export-agent"
+                name="integrations[export_agent]"
+                class="input">
+          <option value="">— All agents (show export on every message) —</option>
+          {% if project.agents %}
+            {% for agent in project.agents %}
+              <option value="{{ agent.name }}" {% if project.integrations.export_agent == agent.name %}selected{% endif %}>{{ agent.name }}</option>
+            {% endfor %}
+          {% endif %}
+        </select>
+        <small class="form-hint">If set, the Export button only appears on this agent's messages.</small>
+      </div>
+
+      <!-- ---- Trello ---- -->
+      <fieldset class="form-group form-group--nested">
+        <legend>Trello</legend>
+
+        <div class="form-group form-group--inline">
+          <label>
+            <input type="checkbox"
+                   id="integrations-trello-enabled"
+                   name="integrations[trello][enabled]"
+                   {% if project.integrations.trello.enabled %}checked{% endif %}>
+            Enable Trello
+          </label>
+        </div>
+
+        <div id="integrations-trello-fields" {% if not project.integrations.trello.enabled %}hidden{% endif %}>
+          <div class="form-group">
+            <label for="trello-app-name">App Name</label>
+            <input type="text"
+                   id="trello-app-name"
+                   name="integrations[trello][app_name]"
+                   class="input input--sm"
+                   value="{{ project.integrations.trello.app_name|default:'' }}"
+                   placeholder="ProductDiscovery"
+                   required>
+            <small class="form-hint">Displayed in the Trello authorization popup.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="trello-api-key">API Key</label>
+            <input type="password"
+                   id="trello-api-key"
+                   name="integrations[trello][api_key]"
+                   class="input input--sm"
+                   value="{{ project.integrations.trello.api_key|default:'' }}"
+                   placeholder="Paste your Trello API key">
+            <small class="form-hint">Get from <a href="https://trello.com/power-ups/admin" target="_blank" rel="noopener">Trello Power-Ups admin</a>.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="trello-default-workspace">Default Workspace</label>
+            <input type="text"
+                   id="trello-default-workspace"
+                   name="integrations[trello][default_workspace]"
+                   class="input input--sm"
+                   value="{{ project.integrations.trello.default_workspace|default:'' }}"
+                   placeholder="My Workspace (optional)">
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="trello-board-name">Default Board Name</label>
+              <input type="text"
+                     id="trello-board-name"
+                     name="integrations[trello][default_board_name]"
+                     class="input input--sm"
+                     value="{{ project.integrations.trello.default_board_name|default:'' }}"
+                     placeholder="My Board">
+            </div>
+            <div class="form-group">
+              <label for="trello-list-name">Default List Name</label>
+              <input type="text"
+                     id="trello-list-name"
+                     name="integrations[trello][default_list_name]"
+                     class="input input--sm"
+                     value="{{ project.integrations.trello.default_list_name|default:'' }}"
+                     placeholder="To Do">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="trello-export-system-prompt">Extraction Prompt</label>
+            <textarea id="trello-export-system-prompt"
+                      name="integrations[trello][export_mapping][system_prompt]"
+                      class="input input--textarea input--sm input--prompt"
+                      rows="10"
+                      placeholder="Paste the extraction prompt…">{% if project.integrations.trello.export_mapping.system_prompt %}{{ project.integrations.trello.export_mapping.system_prompt }}{% else %}{{ trello_export_prompt_hint }}{% endif %}</textarea>
+            <small class="form-hint">Prompt used by the extraction agent to parse the discussion into Trello cards.</small>
+          </div>
+
+          <p class="form-hint form-hint--block">Token is generated per chat session (1-hour expiry). No token configuration needed here.</p>
+        </div>
+      </fieldset>
+
+    </div>
+  </fieldset>
+
   <!-- Submit / Clear / Clone -->
   <div class="form-actions">
     <button type="submit" class="btn btn--primary">

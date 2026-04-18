@@ -69,10 +69,60 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  function syncIntegrationsFields() {
+    var enabledInput = document.getElementById("integrations-enabled");
+    var fields = document.getElementById("integrations-fields");
+    if (!fields) return;
+
+    var enabled = !!(enabledInput && enabledInput.checked);
+    fields.hidden = !enabled;
+
+    // Trello sub-toggle
+    var trelloEnabled = document.getElementById("integrations-trello-enabled");
+    var trelloFields = document.getElementById("integrations-trello-fields");
+    if (trelloFields) {
+      var trelloOn = enabled && !!(trelloEnabled && trelloEnabled.checked);
+      trelloFields.hidden = !trelloOn;
+      trelloFields.querySelectorAll("input, select, textarea").forEach(function (f) {
+        f.disabled = !trelloOn;
+      });
+    }
+
+    // Sync export agent dropdown options from current agent names
+    syncExportAgentDropdown();
+  }
+
+  function syncExportAgentDropdown() {
+    var dropdown = document.getElementById("integrations-export-agent");
+    if (!dropdown) return;
+
+    var currentValue = dropdown.value;
+    var container = document.getElementById("agents-container");
+    if (!container) return;
+
+    // Collect current agent names
+    var agentNames = [];
+    container.querySelectorAll(".agent-card").forEach(function (card) {
+      var nameInput = card.querySelector("[name$='[name]']");
+      if (nameInput && nameInput.value.trim()) {
+        agentNames.push(nameInput.value.trim());
+      }
+    });
+
+    // Preserve the "all" option and rebuild
+    var html = '<option value="">— All agents (show export on every message) —</option>';
+    agentNames.forEach(function (name) {
+      var selected = name === currentValue ? " selected" : "";
+      html += '<option value="' + name + '"' + selected + '>' + name + '</option>';
+    });
+    dropdown.innerHTML = html;
+  }
+
   function syncFormState() {
     syncHumanGateFields();
     syncMaxIterationsLimit();
     syncTeamTypeFields();
+    syncIntegrationsFields();
     updateSubmitState();
   }
 
@@ -163,6 +213,10 @@ document.addEventListener("DOMContentLoaded", function () {
     }
     if (e.target.id === "team_type") {
       syncTeamTypeFields();
+    }
+    if (e.target.id === "integrations-enabled" ||
+        e.target.id === "integrations-trello-enabled") {
+      syncIntegrationsFields();
     }
   });
 
@@ -428,6 +482,12 @@ document.addEventListener("DOMContentLoaded", function () {
         + '<button class="btn btn--danger human-gate-btn human-gate-btn--stop">\uD83D\uDED1 Stop</button>'
         + '</div>';
 
+    // Add export buttons to gate panel when export_agent is blank (export on gate)
+    var exportHtml = "";
+    if (data.export && data.export.enabled && !data.export.export_agent) {
+      exportHtml = buildExportButtons(data.export);
+    }
+
     chatMessages.insertAdjacentHTML(
       "beforeend",
       '<div class="human-gate-panel" data-session-id="' + sessionId + '">'
@@ -436,6 +496,7 @@ document.addEventListener("DOMContentLoaded", function () {
       + ' \u2014 Round ' + data.round + ' of ' + data.max_rounds + ' complete. What would you like to do?'
       + '</div>'
       + modeHtml
+      + exportHtml
       + '</div>'
     );
     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -503,6 +564,23 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  function buildExportButtons(exportMeta) {
+    if (!exportMeta || !exportMeta.enabled || !exportMeta.providers) return "";
+    var html = '<div class="export-actions">';
+    exportMeta.providers.forEach(function (p) {
+      html += '<button type="button" class="btn btn--sm btn--secondary export-btn" data-provider="' + p.name + '">'
+        + '\uD83D\uDCE4 Export to ' + p.label + '</button> ';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function shouldShowExport(exportMeta, agentName) {
+    if (!exportMeta || !exportMeta.enabled) return false;
+    if (!exportMeta.export_agent) return true;
+    return exportMeta.export_agent.toLowerCase() === (agentName || "").toLowerCase();
+  }
+
   function handleSSEEvent(eventName, data) {
     if (eventName === "message") {
       var ts = data.timestamp || "";
@@ -510,6 +588,9 @@ document.addEventListener("DOMContentLoaded", function () {
       var contentHtml = (typeof marked !== "undefined")
         ? marked.parse(data.content || "")
         : "<p>" + (data.content || "").replace(/</g, "&lt;") + "</p>";
+      var exportHtml = shouldShowExport(data.export, data.agent_name)
+        ? buildExportButtons(data.export)
+        : "";
       appendBubble(
         '<div class="chat-bubble chat-bubble--ai">'
         + '<div class="chat-bubble__avatar">' + initial + '</div>'
@@ -519,6 +600,7 @@ document.addEventListener("DOMContentLoaded", function () {
         + '<span class="chat-bubble__time">' + ts + '</span>'
         + '</div>'
         + '<div class="chat-bubble__content">' + contentHtml + '</div>'
+        + exportHtml
         + '</div></div>'
       );
     } else if (eventName === "gate") {
@@ -527,6 +609,9 @@ document.addEventListener("DOMContentLoaded", function () {
     } else if (eventName === "done") {
       setRunningState(false);
       appendStatusBadge("completed");
+      if (data.export && data.export.enabled) {
+        appendBubble(buildExportButtons(data.export));
+      }
     } else if (eventName === "stopped") {
       setRunningState(false);
       appendStatusBadge("stopped");
@@ -704,5 +789,23 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   updateChatAuthState();
+
+  // -----------------------------------------------------------------------
+  // Export — delegate to TrelloExport modal (trello.js)
+  // -----------------------------------------------------------------------
+  document.body.addEventListener("click", function (e) {
+    var btn = e.target.closest(".export-btn");
+    if (!btn) return;
+
+    var sessionId = activeSessionIdInput ? activeSessionIdInput.value.trim() : "";
+    var keyInput = getSecretKeyInput();
+    var secretKey = keyInput ? keyInput.value.trim() : "";
+    if (!sessionId || !secretKey) { alert("Enter the Secret Key first."); return; }
+
+    var provider = btn.dataset.provider;
+    if (provider === "trello" && window.TrelloExport) {
+      window.TrelloExport.openModal(sessionId, secretKey, csrfToken);
+    }
+  });
 
 });

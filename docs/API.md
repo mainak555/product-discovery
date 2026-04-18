@@ -12,6 +12,18 @@ All routes are under the `server` app namespace.
 | `GET` | `/projects/new/` | `project_new` | HTMX partial — blank config form |
 | `GET` | `/projects/<name>/` | `project_detail` | HTMX partial — config form or readonly |
 | `POST` | `/projects/<name>/` | `project_detail` | Create or update a project |
+| `GET` | `/trello/<session_id>/auth-url/` | `trello_auth_url` | Return Trello authorization URL |
+| `POST` | `/trello/<session_id>/store-token/` | `trello_store_token` | Store session Trello token |
+| `GET` | `/trello/<session_id>/token-status/` | `trello_token_status` | Check token validity |
+| `GET` | `/trello/<session_id>/workspaces/` | `trello_workspaces` | List Trello workspaces |
+| `GET` | `/trello/<session_id>/boards/` | `trello_boards` | List boards (opt. `?workspace=`) |
+| `GET` | `/trello/<session_id>/lists/` | `trello_lists` | List lists (`?board=` required) |
+| `POST` | `/trello/<session_id>/create-board/` | `trello_create_board` | Create a new board |
+| `POST` | `/trello/<session_id>/create-list/` | `trello_create_list` | Create a new list |
+| `POST` | `/trello/<session_id>/extract/` | `trello_extract` | Run extraction agent |
+| `POST` | `/trello/<session_id>/push/` | `trello_push` | Push items to Trello |
+
+See [docs/trello_integration.md](trello_integration.md) for full Trello integration details.
 
 ## Request/Response Details
 

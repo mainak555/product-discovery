@@ -1384,3 +1384,174 @@ select.input {
   flex-shrink: 0;
 }
 
+// ---------------------------------------------------------------------------
+// Export UI
+// ---------------------------------------------------------------------------
+.export-actions {
+  display: flex;
+  gap: $space-xs;
+  flex-wrap: wrap;
+  margin-top: $space-sm;
+}
+
+// Trello export modal overlay
+.export-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.export-modal {
+  background: $color-bg;
+  border-radius: $radius;
+  width: 100%;
+  max-width: 720px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: $space-sm $space-md;
+    border-bottom: 1px solid $color-border;
+
+    h3 { margin: 0; }
+  }
+
+  &__close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: $color-text-muted;
+    &:hover { color: $color-text; }
+  }
+
+  &__body {
+    flex: 1;
+    overflow-y: auto;
+    padding: $space-md;
+  }
+
+  &__section {
+    margin-bottom: $space-md;
+
+    h4 {
+      margin: 0 0 $space-sm;
+      font-size: $font-size-base;
+    }
+  }
+
+  &__footer {
+    display: flex;
+    align-items: center;
+    gap: $space-sm;
+    padding: $space-sm $space-md;
+    border-top: 1px solid $color-border;
+  }
+
+  &__token-status {
+    &--valid { color: $color-success; font-weight: 600; }
+    &--expired { color: $color-error; }
+  }
+}
+
+// Cascade select (workspace → board → list)
+.cascade-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-sm;
+
+  &__group {
+    flex: 1 1 180px;
+    display: flex;
+    flex-direction: column;
+    gap: $space-xs;
+
+    label {
+      font-weight: 600;
+      font-size: $font-size-sm;
+    }
+  }
+
+  &__create-new {
+    display: flex;
+    gap: $space-xs;
+    margin-top: $space-xs;
+  }
+}
+
+// Mapping guide badges
+.mapping-guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-xs;
+}
+
+.mapping-badge {
+  display: inline-block;
+  padding: 2px $space-xs;
+  border-radius: $radius;
+  font-size: $font-size-sm;
+
+  &--card { background: #dbeafe; color: #1e40af; }
+  &--desc { background: #fef3c7; color: #92400e; }
+  &--checklist { background: #d1fae5; color: #065f46; }
+}
+
+// Export preview items
+.export-preview {
+  &__item {
+    padding: $space-sm 0;
+    border-bottom: 1px solid $color-border;
+    border-left: 3px solid #93c5fd;
+    padding-left: $space-sm;
+    margin-bottom: $space-xs;
+
+    &:last-child { border-bottom: none; }
+
+    ul {
+      margin: $space-xs 0 0 $space-md;
+      list-style: none;
+      padding: 0;
+    }
+
+    li { margin-bottom: $space-xs; }
+
+    p {
+      margin: $space-xs 0;
+      color: $color-text-muted;
+      font-size: $font-size-sm;
+    }
+  }
+
+  &__success {
+    padding: $space-sm;
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    border-radius: $radius;
+
+    ul { margin: $space-xs 0 0 $space-md; }
+    a { color: $color-primary; }
+  }
+}
+
+// Integrations nested fieldset
+.form-group--nested {
+  margin-left: $space-md;
+  padding-left: $space-md;
+  border-left: 3px solid $color-border;
+}
+
+.form-row--align-center {
+  display: flex;
+  align-items: center;
+  gap: $space-sm;
+}

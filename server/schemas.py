@@ -180,6 +180,75 @@ def validate_chat_session(data):
     }
 
 
+def validate_export_mapping(data):
+    """Validate and clean an export_mapping sub-object."""
+    if not isinstance(data, dict):
+        data = {}
+
+    system_prompt = (data.get("system_prompt") or "").strip()
+
+    return {"system_prompt": system_prompt}
+
+
+def validate_integrations(data, agent_names):
+    """Validate and clean the optional integrations configuration."""
+    if not isinstance(data, dict):
+        return {
+            "enabled": False,
+            "export_agent": "",
+            "trello": {"enabled": False},
+        }
+
+    enabled = bool(data.get("enabled", False))
+
+    export_agent = (data.get("export_agent") or "").strip()
+    if export_agent and export_agent.lower() not in [n.lower() for n in agent_names]:
+        raise ValueError(
+            f"'integrations.export_agent' must match an existing agent name or be blank."
+        )
+
+    if not enabled:
+        return {
+            "enabled": False,
+            "export_agent": "",
+            "trello": {"enabled": False},
+        }
+
+    # --- Trello ---
+    raw_trello = data.get("trello") or {}
+    trello_enabled = bool(raw_trello.get("enabled", False))
+    trello = {"enabled": trello_enabled}
+
+    if trello_enabled:
+        app_name = (raw_trello.get("app_name") or "").strip()
+        if not app_name:
+            raise ValueError("'integrations.trello.app_name' is required when Trello is enabled.")
+
+        api_key = (raw_trello.get("api_key") or "").strip()
+        if not api_key:
+            raise ValueError("'integrations.trello.api_key' is required when Trello is enabled.")
+
+        trello["app_name"] = app_name
+        trello["api_key"] = api_key
+        trello["default_workspace"] = (raw_trello.get("default_workspace") or "").strip()
+        trello["default_board_name"] = (raw_trello.get("default_board_name") or "").strip()
+        trello["default_list_name"] = (raw_trello.get("default_list_name") or "").strip()
+        trello["export_mapping"] = validate_export_mapping(
+            raw_trello.get("export_mapping") or {}
+        )
+
+    if enabled and not trello_enabled:
+        raise ValueError(
+            "Trello must be enabled when integrations are enabled."
+        )
+
+    return {
+        "enabled": enabled,
+        "export_agent": export_agent,
+        "trello": trello,
+    }
+
+
 def validate_project(data):
     """Validate and clean a full project settings dict."""
     if not isinstance(data, dict):
@@ -204,6 +273,10 @@ def validate_project(data):
 
     human_gate = validate_human_gate(data.get("human_gate") or {})
     team = validate_team(data.get("team") or {}, human_gate["enabled"])
+    integrations = validate_integrations(
+        data.get("integrations") or {},
+        [a["name"] for a in agents],
+    )
 
     return {
         "project_name": project_name,
@@ -211,4 +284,5 @@ def validate_project(data):
         "agents": agents,
         "human_gate": human_gate,
         "team": team,
+        "integrations": integrations,
     }

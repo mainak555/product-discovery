@@ -86,3 +86,21 @@ def default_system_prompt_hint() -> str:
 def selector_prompt_hint() -> str:
     """Return the example selector routing prompt shown as a UI hint."""
     return SELECTOR_AGENT_PROMPT
+
+
+TRELLO_EXPORT_SYSTEM_PROMPT = """Extract all actionable items from the discussion into cards with checklist items.
+
+Guidelines:
+- Identify the main deliverables as card titles
+- Break each card into specific checklist items
+- Each item must have a clear title and a concise description
+- Do not invent items not discussed
+- Preserve the intent and language of the original discussion
+
+Output ONLY valid JSON in this exact format:
+{"items": [{"title": "...", "description": "...", "children": [{"title": "...", "description": "..."}]}]}"""
+
+
+def trello_export_prompt_hint() -> str:
+    """Return the default Trello export system prompt template."""
+    return TRELLO_EXPORT_SYSTEM_PROMPT

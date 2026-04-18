@@ -14,7 +14,12 @@ from bson.errors import InvalidId
 from pymongo.errors import DuplicateKeyError
 
 from .db import get_collection, ensure_indexes, CHAT_SESSIONS_COLLECTION
-from .model_catalog import get_agent_model_names, default_system_prompt_hint, selector_prompt_hint as _get_selector_prompt_hint
+from .model_catalog import (
+    get_agent_model_names,
+    default_system_prompt_hint,
+    selector_prompt_hint as _get_selector_prompt_hint,
+    trello_export_prompt_hint as _get_trello_export_prompt_hint,
+)
 from .schemas import validate_project, validate_chat_session
 
 
@@ -39,6 +44,19 @@ def get_system_prompt_template():
 def get_selector_prompt_hint():
     """Return the example selector routing prompt shown as a UI hint."""
     return _get_selector_prompt_hint()
+
+
+def get_trello_export_prompt_hint():
+    """Return the default Trello export system prompt template."""
+    return _get_trello_export_prompt_hint()
+
+
+SECRET_MASK = "••••••••"
+
+
+def _mask_secret(value):
+    """Return SECRET_MASK if value is non-empty, else empty string."""
+    return SECRET_MASK if value else ""
 
 
 def normalize_project(project):
@@ -110,6 +128,30 @@ def normalize_project(project):
         "allow_repeated_speaker": raw_team.get("allow_repeated_speaker", True),
     }
 
+    # --- Integrations ---
+    raw_integrations = project.get("integrations") or {}
+    integrations_enabled = bool(raw_integrations.get("enabled", False))
+
+    raw_trello = raw_integrations.get("trello") or {}
+    trello_enabled = bool(raw_trello.get("enabled", False))
+    trello = {"enabled": trello_enabled}
+    if trello_enabled:
+        trello["app_name"] = (raw_trello.get("app_name") or "").strip()
+        trello["api_key"] = _mask_secret(raw_trello.get("api_key"))
+        trello["default_workspace"] = (raw_trello.get("default_workspace") or "").strip()
+        trello["default_board_name"] = (raw_trello.get("default_board_name") or "").strip()
+        trello["default_list_name"] = (raw_trello.get("default_list_name") or "").strip()
+        raw_trello_mapping = raw_trello.get("export_mapping") or {}
+        trello["export_mapping"] = {
+            "system_prompt": (raw_trello_mapping.get("system_prompt") or "").strip(),
+        }
+
+    integrations = {
+        "enabled": integrations_enabled,
+        "export_agent": (raw_integrations.get("export_agent") or "").strip(),
+        "trello": trello,
+    }
+
     return {
         "project_id": str(project["_id"]) if project.get("_id") else "",
         "project_name": project.get("project_name", ""),
@@ -117,6 +159,7 @@ def normalize_project(project):
         "agents": assistants,
         "human_gate": human_gate,
         "team": team,
+        "integrations": integrations,
     }
 
 
@@ -142,6 +185,20 @@ def get_project(project_id):
     col = get_collection("project_settings")
     project = col.find_one({"_id": oid})
     return normalize_project(project)
+
+
+def get_project_raw(project_id):
+    """Return raw (unmasked) project doc for export pipeline use. None if not found."""
+    ensure_indexes()
+    try:
+        oid = ObjectId(project_id)
+    except (InvalidId, TypeError):
+        return None
+    col = get_collection("project_settings")
+    doc = col.find_one({"_id": oid})
+    if doc:
+        doc["project_id"] = str(doc.pop("_id"))
+    return doc
 
 
 def create_project(data):
@@ -179,10 +236,18 @@ def update_project(project_id, data):
     except (InvalidId, TypeError):
         raise ValueError(f"Invalid project ID '{project_id}'.")
 
-    cleaned = validate_project(data)
-
+    # Load existing doc to preserve masked secrets
     ensure_indexes()
     col = get_collection("project_settings")
+    existing = col.find_one({"_id": oid})
+    if existing is None:
+        raise ValueError("Project not found.")
+
+    # Before validation, replace masked secrets with originals from DB
+    _restore_masked_secrets(data, existing)
+
+    cleaned = validate_project(data)
+
     try:
         result = col.replace_one({"_id": oid}, cleaned)
     except DuplicateKeyError:
@@ -194,6 +259,22 @@ def update_project(project_id, data):
 
     cleaned["_id"] = oid
     return normalize_project(cleaned)
+
+
+def _restore_masked_secrets(data, existing):
+    """Replace SECRET_MASK placeholders in data with actual values from the DB."""
+    integrations = data.get("integrations")
+    if not isinstance(integrations, dict):
+        return
+
+    existing_integrations = existing.get("integrations") or {}
+
+    # Trello secrets
+    trello = integrations.get("trello")
+    existing_trello = existing_integrations.get("trello") or {}
+    if isinstance(trello, dict):
+        if trello.get("api_key") == SECRET_MASK:
+            trello["api_key"] = existing_trello.get("api_key", "")
 
 
 def delete_project(project_id):
@@ -217,16 +298,28 @@ def clone_project(project_id):
     Returns the newly created project document.
     Raises ValueError if the source project is not found or the cloned name is a duplicate.
     """
-    source = get_project(project_id)
-    if source is None:
+    try:
+        oid = ObjectId(project_id)
+    except (InvalidId, TypeError):
         raise ValueError("Project not found.")
 
+    ensure_indexes()
+    col = get_collection("project_settings")
+    raw = col.find_one({"_id": oid})
+    if raw is None:
+        raise ValueError("Project not found.")
+
+    source = normalize_project(raw)
+
+    # Build clone data with raw (unmasked) secrets
+    raw_integrations = raw.get("integrations") or {}
     data = {
         "project_name": f"{source['project_name']} - Copy",
         "objective": source["objective"],
         "agents": source["agents"],
         "human_gate": source["human_gate"],
         "team": source["team"],
+        "integrations": raw_integrations,
     }
     return create_project(data)
 

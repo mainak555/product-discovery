@@ -38,6 +38,7 @@ def _get_form_context(project=None, mode="create", success=None):
         "model_names": services.get_available_models(),
         "default_system_prompt": services.get_system_prompt_template(),
         "selector_prompt_hint": services.get_selector_prompt_hint(),
+        "trello_export_prompt_hint": services.get_trello_export_prompt_hint(),
     }
     if success:
         context["success"] = success
@@ -69,6 +70,25 @@ def _parse_form_agents(post_data):
 def _build_project_data(post_data):
     """Build a project data dict from POST form fields."""
     human_gate_enabled = post_data.get("human_gate[enabled]") == "on"
+    integrations_enabled = post_data.get("integrations[enabled]") == "on"
+    trello_enabled = post_data.get("integrations[trello][enabled]") == "on"
+
+    integrations = {
+        "enabled": integrations_enabled,
+        "export_agent": post_data.get("integrations[export_agent]", "").strip(),
+        "trello": {
+            "enabled": trello_enabled,
+            "app_name": post_data.get("integrations[trello][app_name]", "").strip(),
+            "api_key": post_data.get("integrations[trello][api_key]", "").strip(),
+            "default_workspace": post_data.get("integrations[trello][default_workspace]", "").strip(),
+            "default_board_name": post_data.get("integrations[trello][default_board_name]", "").strip(),
+            "default_list_name": post_data.get("integrations[trello][default_list_name]", "").strip(),
+            "export_mapping": {
+                "system_prompt": post_data.get("integrations[trello][export_mapping][system_prompt]", "").strip(),
+            },
+        },
+    }
+
     return {
         "project_name": post_data.get("project_name", "").strip(),
         "objective": post_data.get("objective", "").strip(),
@@ -89,6 +109,7 @@ def _build_project_data(post_data):
             "temperature": post_data.get("team[temperature]", "0.0").strip() or "0.0",
             "allow_repeated_speaker": post_data.get("team[allow_repeated_speaker]"),
         },
+        "integrations": integrations,
     }
 
 
@@ -436,6 +457,27 @@ async def chat_session_run(request, session_id):
         has_gate = project.get("human_gate", {}).get("enabled", False)
         max_iter = project.get("team", {}).get("max_iterations", 5)
 
+        # Export integration metadata for client-side export buttons
+        integrations = project.get("integrations") or {}
+        export_enabled = integrations.get("enabled", False)
+        export_agent = integrations.get("export_agent", "")
+        export_providers = []
+        if export_enabled:
+            trello_cfg = integrations.get("trello") or {}
+            if trello_cfg.get("enabled"):
+                export_providers.append({
+                    "name": "trello",
+                    "label": "Trello",
+                    "default_board_name": trello_cfg.get("default_board_name", ""),
+                    "default_list_name": trello_cfg.get("default_list_name", ""),
+                })
+
+        export_meta = {
+            "enabled": export_enabled and len(export_providers) > 0,
+            "export_agent": export_agent,
+            "providers": export_providers,
+        } if export_enabled else None
+
         pending_messages = []
 
         # Persist the human's message (initial task or gate feedback) to the discussion.
@@ -465,16 +507,22 @@ async def chat_session_run(request, session_id):
 
                     if has_gate and current_round < max_iter:
                         await asyncio.to_thread(services.set_session_status, session_id, "awaiting_input")
-                        yield _sse("gate", {
+                        gate_data = {
                             "mode": project["human_gate"]["interaction_mode"],
                             "round": current_round + 1,
                             "max_rounds": max_iter,
                             "human_name": project["human_gate"]["name"],
-                        })
+                        }
+                        if export_meta:
+                            gate_data["export"] = export_meta
+                        yield _sse("gate", gate_data)
                     else:
                         await asyncio.to_thread(services.set_session_status, session_id, "completed")
                         evict_team(session_id)
-                        yield _sse("done", {"status": "completed", "round": current_round})
+                        done_data = {"status": "completed", "round": current_round}
+                        if export_meta:
+                            done_data["export"] = export_meta
+                        yield _sse("done", done_data)
 
                 elif isinstance(msg, TextMessage) and msg.source != "user":
                     ts = datetime.now(timezone.utc).strftime("%H:%M")
@@ -485,7 +533,11 @@ async def chat_session_run(request, session_id):
                         "timestamp": ts,
                     }
                     pending_messages.append(record)
-                    yield _sse("message", record)
+                    sse_record = dict(record)
+                    # Attach export info for the client to decide button rendering
+                    if export_meta:
+                        sse_record["export"] = export_meta
+                    yield _sse("message", sse_record)
 
         except asyncio.CancelledError:
             if pending_messages:
