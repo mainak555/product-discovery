@@ -17,6 +17,7 @@
       hx-swap="innerHTML">
 
   {% csrf_token %}
+  <input type="hidden" id="config-project-id" value="{{ project.project_id|default:'' }}">
 
   <h2 class="config-form__title">
     {% if mode == "create" %}New Configuration{% else %}Edit: {{ project.project_name }}{% endif %}
@@ -262,34 +263,86 @@
             <small class="form-hint">Get from <a href="https://trello.com/power-ups/admin" target="_blank" rel="noopener">Trello Power-Ups admin</a>.</small>
           </div>
 
-          <div class="form-group">
-            <label for="trello-default-workspace">Default Workspace</label>
-            <input type="text"
-                   id="trello-default-workspace"
-                   name="integrations[trello][default_workspace]"
-                   class="input input--sm"
-                   value="{{ project.integrations.trello.default_workspace|default:'' }}"
-                   placeholder="My Workspace (optional)">
+          <!-- Token row (edit mode only, visible when API key entered) -->
+          <div class="form-group" id="trello-token-section" {% if mode == 'create' %}hidden{% endif %}>
+            <label>Token</label>
+            <div class="trello-token-row">
+              <input type="text"
+                     id="trello-token-display"
+                     class="input input--sm"
+                     value="{% if project.integrations.trello.token %}{{ project.integrations.trello.token }}{% else %}Not generated{% endif %}"
+                     disabled
+                     readonly>
+              <button type="button"
+                      class="btn btn--primary btn--sm js-requires-secret"
+                      id="trello-generate-token-btn"
+                      {% if mode == 'create' %}disabled{% endif %}>
+                Generate Token
+              </button>
+            </div>
+            {% if project.integrations.trello.token_generated_at %}
+              <small class="form-hint trello-token-status" id="trello-token-generated-at">
+                Generated: {{ project.integrations.trello.token_generated_at }}
+              </small>
+            {% else %}
+              <small class="form-hint trello-token-status" id="trello-token-generated-at"></small>
+            {% endif %}
+            <input type="hidden" name="integrations[trello][token]" value="{{ project.integrations.trello.token|default:'' }}">
+            <input type="hidden" name="integrations[trello][token_generated_at]" value="{{ project.integrations.trello.token_generated_at|default:'' }}">
+            {% if mode == 'create' %}
+              <small class="form-hint form-hint--block">Save project first to generate a Trello token.</small>
+            {% endif %}
           </div>
 
-          <div class="form-row">
+          <!-- Cascade dropdowns (visible when token exists, edit mode only) -->
+          <div id="trello-cascade-section" {% if mode == 'create' or not project.integrations.trello.token %}hidden{% endif %}>
             <div class="form-group">
-              <label for="trello-board-name">Default Board Name</label>
-              <input type="text"
-                     id="trello-board-name"
-                     name="integrations[trello][default_board_name]"
-                     class="input input--sm"
-                     value="{{ project.integrations.trello.default_board_name|default:'' }}"
-                     placeholder="My Board">
+              <label for="trello-workspace-select">Default Workspace</label>
+              <select id="trello-workspace-select" class="input input--sm">
+                <option value="">— Select to load —</option>
+              </select>
+              <input type="hidden" name="integrations[trello][default_workspace_id]" id="trello-default-workspace-id"
+                     value="{{ project.integrations.trello.default_workspace_id|default:'' }}">
+              <input type="hidden" name="integrations[trello][default_workspace_name]" id="trello-default-workspace-name"
+                     value="{{ project.integrations.trello.default_workspace_name|default:'' }}">
             </div>
-            <div class="form-group">
-              <label for="trello-list-name">Default List Name</label>
-              <input type="text"
-                     id="trello-list-name"
-                     name="integrations[trello][default_list_name]"
-                     class="input input--sm"
-                     value="{{ project.integrations.trello.default_list_name|default:'' }}"
-                     placeholder="To Do">
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="trello-board-select">Default Board</label>
+                <select id="trello-board-select" class="input input--sm" disabled>
+                  <option value="">—</option>
+                </select>
+                <input type="hidden" name="integrations[trello][default_board_id]" id="trello-default-board-id"
+                       value="{{ project.integrations.trello.default_board_id|default:'' }}">
+                <input type="hidden" name="integrations[trello][default_board_name]" id="trello-default-board-name"
+                       value="{{ project.integrations.trello.default_board_name|default:'' }}">
+              </div>
+              <div class="form-group">
+                <label for="trello-list-select">Default List</label>
+                <select id="trello-list-select" class="input input--sm" disabled>
+                  <option value="">—</option>
+                </select>
+                <input type="hidden" name="integrations[trello][default_list_id]" id="trello-default-list-id"
+                       value="{{ project.integrations.trello.default_list_id|default:'' }}">
+                <input type="hidden" name="integrations[trello][default_list_name]" id="trello-default-list-name"
+                       value="{{ project.integrations.trello.default_list_name|default:'' }}">
+              </div>
+            </div>
+          </div>
+
+          <!-- Create New mini-modal (shared for board/list) -->
+          <div class="trello-create-modal" id="trello-create-modal" hidden>
+            <div class="trello-create-modal__overlay" id="trello-create-modal-overlay"></div>
+            <div class="trello-create-modal__card">
+              <h4 id="trello-create-modal-title">Create New</h4>
+              <div class="form-group">
+                <input type="text" id="trello-create-modal-input" class="input input--sm" placeholder="Enter name">
+              </div>
+              <div class="form-actions">
+                <button type="button" class="btn btn--primary btn--sm" id="trello-create-modal-confirm">Create</button>
+                <button type="button" class="btn btn--secondary btn--sm" id="trello-create-modal-cancel">Cancel</button>
+              </div>
             </div>
           </div>
 
@@ -331,8 +384,6 @@
                       placeholder="Paste the extraction prompt…">{% if project.integrations.trello.export_mapping.system_prompt %}{{ project.integrations.trello.export_mapping.system_prompt }}{% else %}{{ trello_export_prompt_hint }}{% endif %}</textarea>
             <small class="form-hint">Prompt used by the extraction agent to parse the discussion into Trello cards.</small>
           </div>
-
-          <p class="form-hint form-hint--block">Token is generated per chat session (1-hour expiry). No token configuration needed here.</p>
         </div>
       </fieldset>
 

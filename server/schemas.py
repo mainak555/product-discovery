@@ -248,8 +248,13 @@ def validate_integrations(data, agent_names):
         trello["export_agents"] = export_agents
         trello["app_name"] = app_name
         trello["api_key"] = api_key
-        trello["default_workspace"] = (raw_trello.get("default_workspace") or "").strip()
+        trello["token"] = (raw_trello.get("token") or "").strip()
+        trello["token_generated_at"] = (raw_trello.get("token_generated_at") or "").strip()
+        trello["default_workspace_id"] = (raw_trello.get("default_workspace_id") or "").strip()
+        trello["default_workspace_name"] = (raw_trello.get("default_workspace_name") or raw_trello.get("default_workspace") or "").strip()
+        trello["default_board_id"] = (raw_trello.get("default_board_id") or "").strip()
         trello["default_board_name"] = (raw_trello.get("default_board_name") or "").strip()
+        trello["default_list_id"] = (raw_trello.get("default_list_id") or "").strip()
         trello["default_list_name"] = (raw_trello.get("default_list_name") or "").strip()
         trello["export_mapping"] = validate_export_mapping(
             raw_trello.get("export_mapping") or {}

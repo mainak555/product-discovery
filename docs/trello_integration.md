@@ -19,44 +19,55 @@ integrations:
   enabled: true
   trello:
     enabled: true
-    export_agents: []       # empty = show on every message; list of agent names to restrict
-    app_name: "MyApp"       # required — shown in Trello auth popup
-    api_key: "abc..."       # required — masked in UI, stays server-side
-    default_workspace: ""   # optional — pre-select in modal
-    default_board_name: ""  # optional
-    default_list_name: ""   # optional
+    export_agents: []              # empty = show on every message; list of agent names to restrict
+    app_name: "MyApp"              # required — shown in Trello auth popup
+    api_key: "abc..."              # required — masked in UI, stays server-side
+    token: "trello-token..."       # generated via config page, expiration=never, masked in UI
+    token_generated_at: "ISO str"  # UTC datetime when token was generated
+    default_workspace_id: ""       # Trello workspace ID — selected via cascade dropdown
+    default_workspace_name: ""     # display name (stored for readonly view)
+    default_board_id: ""           # Trello board ID
+    default_board_name: ""         # display name
+    default_list_id: ""            # Trello list ID
+    default_list_name: ""          # display name
     export_mapping:
-      model: ""             # blank = fall back to first assistant agent's model
-      temperature: 0.0      # extraction sampling temperature (0.0 = deterministic)
-      system_prompt: "..."  # extraction prompt
+      model: ""                    # blank = fall back to first assistant agent's model
+      temperature: 0.0             # extraction sampling temperature (0.0 = deterministic)
+      system_prompt: "..."         # extraction prompt
 ```
 
-## Session Token Lifecycle
+## Project Token Lifecycle
 
-- Tokens are **per chat session**, stored in the `chat_sessions` MongoDB collection
-- Fields: `trello_token` (string), `trello_token_expiry` (datetime, UTC)
-- Expiry: **1 hour** from authorization
-- Token is obtained via Trello's `postMessage` popup flow
+- Tokens are **per project**, stored in `project_settings.integrations.trello.token`
+- Fields: `token` (string, masked via `SECRET_MASK`), `token_generated_at` (ISO datetime string, UTC)
+- Expiry: **never** — tokens persist until regenerated
+- Token is generated on the **config page** (edit mode) via Trello's popup flow
 - The `api_key` never leaves the server — the frontend only receives the auth URL
+- Legacy session-level token functions (`store_session_token`, etc.) are kept for backward compatibility
+- Session-scoped endpoints (`/trello/<sid>/...`) resolve credentials via the session's project token
 
-## Auth Flow
+## Auth Flow (Config Page)
 
-1. Frontend calls `GET /trello/<session_id>/auth-url/`
-2. Backend builds URL: `https://trello.com/1/authorize?expiration=1hour&name=<app_name>&scope=read,write&response_type=token&key=<api_key>&callback_method=fragment&return_url=<callback_url>`
-3. Frontend opens popup → user authorizes → Trello redirects popup to `/trello/callback/#token=<token>`
-4. Callback page reads hash, relays token to opener via same-origin `postMessage`, then self-closes
-5. Frontend sends `POST /trello/<session_id>/store-token/` with `{token: "..."}`
-6. Backend stores token + 1-hour expiry on the session document
+1. User clicks "Generate Token" on the config page (edit mode)
+2. Frontend calls `GET /trello/project/<project_id>/auth-url/`
+3. Backend builds URL: `https://trello.com/1/authorize?expiration=never&name=<app_name>&scope=read,write&response_type=token&key=<api_key>&callback_method=fragment&return_url=<callback_url>`
+4. Frontend opens popup → user authorizes → Trello redirects popup to `/trello/callback/?pid=<project_id>&skey=<secret_key>#token=<token>`
+5. Callback page reads hash, sends `POST /trello/project/<pid>/store-token/` with `{token: "..."}`, then sends `postMessage("trello_token_stored")` to opener
+6. Backend stores token + `token_generated_at` on the project document
+7. Frontend polls for popup close, then calls `GET /trello/project/<pid>/token-status/` to refresh UI
+8. Cascade dropdowns (workspace → board → list) become available once token is valid
 
 ## API Endpoints
 
 All endpoints require `X-App-Secret-Key` header.
 
+### Session-scoped (export modal — `/trello/<sid>/`)
+
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/trello/<sid>/auth-url/` | Get Trello authorization URL |
-| `POST` | `/trello/<sid>/store-token/` | Store token (`{token}`) |
-| `GET` | `/trello/<sid>/token-status/` | Check token validity → `{valid, expires_at}` |
+| `GET` | `/trello/<sid>/auth-url/` | Get Trello authorization URL (legacy) |
+| `POST` | `/trello/<sid>/store-token/` | Store session Trello token (legacy) |
+| `GET` | `/trello/<sid>/token-status/` | Check token validity → `{valid, token_generated_at, defaults}` |
 | `GET` | `/trello/<sid>/workspaces/` | List workspaces → `[{id, displayName}]` |
 | `GET` | `/trello/<sid>/boards/?workspace=` | List boards → `[{id, name}]` |
 | `GET` | `/trello/<sid>/lists/?board=` | List lists → `[{id, name}]` |
@@ -65,12 +76,25 @@ All endpoints require `X-App-Secret-Key` header.
 | `POST` | `/trello/<sid>/extract/` | Run extraction → `{items: [...]}` |
 | `POST` | `/trello/<sid>/push/` | Push cards (`{list_id, items}`) → `{status, result}` |
 
+### Project-scoped (config page — `/trello/project/<pid>/`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/trello/project/<pid>/auth-url/` | Get Trello authorization URL (expiration=never) |
+| `POST` | `/trello/project/<pid>/store-token/` | Store project token (`{token}`) → `{status, token_generated_at}` |
+| `GET` | `/trello/project/<pid>/token-status/` | Check project token → `{valid, token_generated_at}` |
+| `GET` | `/trello/project/<pid>/workspaces/` | List workspaces using project credentials |
+| `GET` | `/trello/project/<pid>/boards/?workspace=` | List boards using project credentials |
+| `GET` | `/trello/project/<pid>/lists/?board=` | List lists using project credentials |
+| `POST` | `/trello/project/<pid>/create-board/` | Create board (`{name, workspace_id?}`) |
+| `POST` | `/trello/project/<pid>/create-list/` | Create list (`{name, board_id}`) |
+
 ## Export Flow
 
 1. User clicks "Export to Trello" button on a chat message
-2. Modal opens → checks token status
-3. If no token → "Authorize" button → popup flow
-4. Cascade dropdowns load: Workspace → Board → List (each with "➕ Create New")
+2. Modal opens → checks token status via session endpoint (resolves to project token)
+3. If no token → message directs user to configure token in project settings
+4. Cascade dropdowns load with defaults pre-selected from project config
 5. "Extract Items" button runs the extraction agent
 6. Preview shows cards with badges: 📋 Card, 📝 Description, ☑️ Checklist
 7. "Export to Trello" pushes items → shows success with card links
@@ -96,7 +120,8 @@ items: [
 
 ## Security
 
-- `api_key` is stored in project config and never sent to the frontend
+- `api_key` and `token` are stored in project config and masked via `SECRET_MASK` in the UI
 - All Trello API calls are proxied through Django backend
-- Tokens are short-lived (1 hour) and scoped to a single chat session
+- Tokens have `expiration=never` and are scoped to the project (shared across sessions)
 - All endpoints gated by `X-App-Secret-Key` header
+- Token can be regenerated at any time from the config page

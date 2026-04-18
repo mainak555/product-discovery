@@ -1555,3 +1555,85 @@ select.input {
   align-items: center;
   gap: $space-sm;
 }
+
+// ---------------------------------------------------------------------------
+// Trello Config — Token row & cascade dropdowns (config page)
+// ---------------------------------------------------------------------------
+
+.trello-token-row {
+  display: flex;
+  align-items: center;
+  gap: $space-sm;
+
+  input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+}
+
+.trello-token-status {
+  display: block;
+  margin-top: $space-xs;
+  color: $color-text-muted;
+  font-size: $font-size-sm;
+}
+
+// Create-new mini modal (board / list)
+.trello-create-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &__overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+  }
+
+  &__card {
+    position: relative;
+    background: $color-surface;
+    border: 1px solid $color-border;
+    border-radius: $radius-lg;
+    padding: $space-lg;
+    min-width: 320px;
+    max-width: 420px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+
+    h4 { margin-bottom: $space-sm; }
+  }
+
+  .form-actions {
+    display: flex;
+    gap: $space-sm;
+    margin-top: $space-sm;
+    justify-content: flex-end;
+  }
+}
+
+// Badge styles for token status in readonly view
+.badge {
+  display: inline-block;
+  padding: 2px $space-xs;
+  border-radius: $radius;
+  font-size: $font-size-sm;
+  font-weight: 600;
+}
+
+.badge-success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badge-error {
+  background: #fef2f2;
+  color: #991b1b;
+}

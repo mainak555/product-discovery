@@ -84,6 +84,8 @@ document.addEventListener("DOMContentLoaded", function () {
       var trelloOn = enabled && !!(trelloEnabled && trelloEnabled.checked);
       trelloFields.hidden = !trelloOn;
       trelloFields.querySelectorAll("input, select, textarea").forEach(function (f) {
+        // Keep the token display always disabled (it's a read-only indicator)
+        if (f.id === "trello-token-display") return;
         f.disabled = !trelloOn;
       });
     }
@@ -237,6 +239,342 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   syncFormState();
+
+  // =========================================================================
+  // Trello Config — token generation & cascade dropdowns (config page)
+  // =========================================================================
+
+  function getTrelloProjectId() {
+    var el = document.getElementById("config-project-id");
+    return el ? el.value.trim() : "";
+  }
+
+  function getTrelloSecretKey() {
+    var ki = getSecretKeyInput();
+    return ki ? ki.value.trim() : "";
+  }
+
+  function trelloHeaders() {
+    var csrfInput = document.querySelector("[name=csrfmiddlewaretoken]");
+    return {
+      "Content-Type": "application/json",
+      "X-App-Secret-Key": getTrelloSecretKey(),
+      "X-CSRFToken": csrfInput ? csrfInput.value : ""
+    };
+  }
+
+  // --- Token generation via popup ---
+  document.body.addEventListener("click", function (e) {
+    if (!e.target.matches("#trello-generate-token-btn")) return;
+    e.preventDefault();
+
+    var projectId = getTrelloProjectId();
+    var secretKey = getTrelloSecretKey();
+    if (!projectId || !secretKey) { alert("Save the project and enter the Secret Key first."); return; }
+
+    fetch("/trello/project/" + encodeURIComponent(projectId) + "/auth-url/", {
+      headers: { "X-App-Secret-Key": secretKey }
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.error) { alert(data.error); return; }
+      // Open Trello auth popup
+      var popup = window.open(data.url, "TrelloAuth", "width=600,height=700");
+      // Poll for completion
+      var poll = setInterval(function () {
+        if (popup && popup.closed) {
+          clearInterval(poll);
+          checkProjectTokenStatus(projectId);
+        }
+      }, 500);
+    })
+    .catch(function (err) { alert("Failed to start Trello auth: " + err); });
+  });
+
+  function checkProjectTokenStatus(projectId) {
+    fetch("/trello/project/" + encodeURIComponent(projectId) + "/token-status/", {
+      headers: { "X-App-Secret-Key": getTrelloSecretKey() }
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      var display = document.getElementById("trello-token-display");
+      var genAt = document.getElementById("trello-token-generated-at");
+      var cascadeSection = document.getElementById("trello-cascade-section");
+      if (data.valid) {
+        if (display) display.value = "••••••••";
+        if (genAt) genAt.textContent = "Generated: " + data.token_generated_at;
+        // Update hidden form fields
+        var tokenHidden = document.querySelector("input[name='integrations[trello][token]']");
+        if (tokenHidden) tokenHidden.value = "••••••••";
+        var tokenAtHidden = document.querySelector("input[name='integrations[trello][token_generated_at]']");
+        if (tokenAtHidden) tokenAtHidden.value = data.token_generated_at;
+        // Show cascade section and load workspaces
+        if (cascadeSection) {
+          cascadeSection.hidden = false;
+          loadTrelloWorkspaces(projectId);
+        }
+      } else {
+        if (display) display.value = "Not generated";
+        if (genAt) genAt.textContent = "";
+        if (cascadeSection) cascadeSection.hidden = true;
+      }
+    });
+  }
+
+  // --- Cascade dropdowns ---
+
+  function loadTrelloWorkspaces(projectId) {
+    var select = document.getElementById("trello-workspace-select");
+    if (!select) return;
+
+    var savedId = document.getElementById("trello-default-workspace-id");
+    var savedVal = savedId ? savedId.value : "";
+
+    fetch("/trello/project/" + encodeURIComponent(projectId) + "/workspaces/", {
+      headers: { "X-App-Secret-Key": getTrelloSecretKey() }
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.error) { return; }
+      var html = '<option value="">— Select workspace —</option>';
+      (Array.isArray(data) ? data : []).forEach(function (ws) {
+        var sel = ws.id === savedVal ? " selected" : "";
+        html += '<option value="' + ws.id + '"' + sel + '>' + (ws.displayName || ws.name || ws.id) + '</option>';
+      });
+      select.innerHTML = html;
+      // If a saved workspace was selected, trigger board load
+      if (savedVal && select.value === savedVal) {
+        syncWorkspaceHiddenFields(select);
+        loadTrelloBoards(projectId, savedVal);
+      }
+    });
+  }
+
+  function syncWorkspaceHiddenFields(select) {
+    var opt = select.options[select.selectedIndex];
+    var idField = document.getElementById("trello-default-workspace-id");
+    var nameField = document.getElementById("trello-default-workspace-name");
+    if (idField) idField.value = opt ? opt.value : "";
+    if (nameField) nameField.value = opt ? opt.textContent : "";
+  }
+
+  function loadTrelloBoards(projectId, workspaceId) {
+    var select = document.getElementById("trello-board-select");
+    if (!select) return;
+    select.disabled = true;
+
+    var savedId = document.getElementById("trello-default-board-id");
+    var savedVal = savedId ? savedId.value : "";
+
+    var url = "/trello/project/" + encodeURIComponent(projectId) + "/boards/";
+    if (workspaceId) url += "?workspace=" + encodeURIComponent(workspaceId);
+
+    fetch(url, { headers: { "X-App-Secret-Key": getTrelloSecretKey() } })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.error) { select.disabled = false; return; }
+      var html = '<option value="">— Select board —</option>';
+      html += '<option value="__create_new__">➕ Create New Board</option>';
+      (Array.isArray(data) ? data : []).forEach(function (b) {
+        var sel = b.id === savedVal ? " selected" : "";
+        html += '<option value="' + b.id + '"' + sel + '>' + (b.name || b.id) + '</option>';
+      });
+      select.innerHTML = html;
+      select.disabled = false;
+      // If a saved board was selected, trigger list load
+      if (savedVal && select.value === savedVal) {
+        syncBoardHiddenFields(select);
+        loadTrelloLists(projectId, savedVal);
+      }
+    });
+  }
+
+  function syncBoardHiddenFields(select) {
+    var opt = select.options[select.selectedIndex];
+    var idField = document.getElementById("trello-default-board-id");
+    var nameField = document.getElementById("trello-default-board-name");
+    if (idField) idField.value = (opt && opt.value !== "__create_new__") ? opt.value : "";
+    if (nameField) nameField.value = (opt && opt.value !== "__create_new__") ? opt.textContent : "";
+  }
+
+  function loadTrelloLists(projectId, boardId) {
+    var select = document.getElementById("trello-list-select");
+    if (!select) return;
+    select.disabled = true;
+
+    var savedId = document.getElementById("trello-default-list-id");
+    var savedVal = savedId ? savedId.value : "";
+
+    fetch("/trello/project/" + encodeURIComponent(projectId) + "/lists/?board=" + encodeURIComponent(boardId), {
+      headers: { "X-App-Secret-Key": getTrelloSecretKey() }
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.error) { select.disabled = false; return; }
+      var html = '<option value="">— Select list —</option>';
+      html += '<option value="__create_new__">➕ Create New List</option>';
+      (Array.isArray(data) ? data : []).forEach(function (l) {
+        var sel = l.id === savedVal ? " selected" : "";
+        html += '<option value="' + l.id + '"' + sel + '>' + (l.name || l.id) + '</option>';
+      });
+      select.innerHTML = html;
+      select.disabled = false;
+      if (savedVal && select.value === savedVal) {
+        syncListHiddenFields(select);
+      }
+    });
+  }
+
+  function syncListHiddenFields(select) {
+    var opt = select.options[select.selectedIndex];
+    var idField = document.getElementById("trello-default-list-id");
+    var nameField = document.getElementById("trello-default-list-name");
+    if (idField) idField.value = (opt && opt.value !== "__create_new__") ? opt.value : "";
+    if (nameField) nameField.value = (opt && opt.value !== "__create_new__") ? opt.textContent : "";
+  }
+
+  // --- Cascade change handlers ---
+
+  document.body.addEventListener("change", function (e) {
+    var projectId = getTrelloProjectId();
+    if (!projectId) return;
+
+    if (e.target.id === "trello-workspace-select") {
+      syncWorkspaceHiddenFields(e.target);
+      var wsId = e.target.value;
+      // Reset board & list
+      var boardSelect = document.getElementById("trello-board-select");
+      var listSelect = document.getElementById("trello-list-select");
+      if (boardSelect) { boardSelect.innerHTML = '<option value="">—</option>'; boardSelect.disabled = true; }
+      if (listSelect) { listSelect.innerHTML = '<option value="">—</option>'; listSelect.disabled = true; }
+      document.getElementById("trello-default-board-id").value = "";
+      document.getElementById("trello-default-board-name").value = "";
+      document.getElementById("trello-default-list-id").value = "";
+      document.getElementById("trello-default-list-name").value = "";
+      if (wsId) loadTrelloBoards(projectId, wsId);
+    }
+
+    if (e.target.id === "trello-board-select") {
+      if (e.target.value === "__create_new__") {
+        openTrelloCreateModal("board");
+        return;
+      }
+      syncBoardHiddenFields(e.target);
+      var boardId = e.target.value;
+      // Reset list
+      var listSelect2 = document.getElementById("trello-list-select");
+      if (listSelect2) { listSelect2.innerHTML = '<option value="">—</option>'; listSelect2.disabled = true; }
+      document.getElementById("trello-default-list-id").value = "";
+      document.getElementById("trello-default-list-name").value = "";
+      if (boardId) loadTrelloLists(projectId, boardId);
+    }
+
+    if (e.target.id === "trello-list-select") {
+      if (e.target.value === "__create_new__") {
+        openTrelloCreateModal("list");
+        return;
+      }
+      syncListHiddenFields(e.target);
+    }
+  });
+
+  // --- Create New modal ---
+
+  var trelloCreateType = "";  // "board" or "list"
+
+  function openTrelloCreateModal(type) {
+    trelloCreateType = type;
+    var modal = document.getElementById("trello-create-modal");
+    var title = document.getElementById("trello-create-modal-title");
+    var input = document.getElementById("trello-create-modal-input");
+    if (!modal) return;
+    if (title) title.textContent = type === "board" ? "Create New Board" : "Create New List";
+    if (input) input.value = "";
+    modal.hidden = false;
+    if (input) input.focus();
+  }
+
+  function closeTrelloCreateModal() {
+    var modal = document.getElementById("trello-create-modal");
+    if (modal) modal.hidden = true;
+    // Reset the select that triggered it
+    var selectId = trelloCreateType === "board" ? "trello-board-select" : "trello-list-select";
+    var sel = document.getElementById(selectId);
+    if (sel) sel.value = "";
+    trelloCreateType = "";
+  }
+
+  document.body.addEventListener("click", function (e) {
+    if (e.target.id === "trello-create-modal-cancel" || e.target.id === "trello-create-modal-overlay") {
+      closeTrelloCreateModal();
+    }
+
+    if (e.target.id === "trello-create-modal-confirm") {
+      var name = (document.getElementById("trello-create-modal-input").value || "").trim();
+      if (!name) { alert("Enter a name."); return; }
+
+      var projectId = getTrelloProjectId();
+      if (!projectId) return;
+
+      if (trelloCreateType === "board") {
+        var wsSelect = document.getElementById("trello-workspace-select");
+        var wsId = wsSelect ? wsSelect.value : "";
+        fetch("/trello/project/" + encodeURIComponent(projectId) + "/create-board/", {
+          method: "POST",
+          headers: trelloHeaders(),
+          body: JSON.stringify({ name: name, workspace_id: wsId || null })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.error) { alert(data.error); return; }
+          closeTrelloCreateModal();
+          // Reload boards and select the new one
+          document.getElementById("trello-default-board-id").value = data.id;
+          document.getElementById("trello-default-board-name").value = data.name || name;
+          loadTrelloBoards(projectId, wsId);
+        })
+        .catch(function (err) { alert("Failed: " + err); });
+
+      } else if (trelloCreateType === "list") {
+        var boardSelect = document.getElementById("trello-board-select");
+        var boardId = document.getElementById("trello-default-board-id").value;
+        if (!boardId) { alert("Select a board first."); return; }
+        fetch("/trello/project/" + encodeURIComponent(projectId) + "/create-list/", {
+          method: "POST",
+          headers: trelloHeaders(),
+          body: JSON.stringify({ name: name, board_id: boardId })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.error) { alert(data.error); return; }
+          closeTrelloCreateModal();
+          // Reload lists and select the new one
+          document.getElementById("trello-default-list-id").value = data.id;
+          document.getElementById("trello-default-list-name").value = data.name || name;
+          loadTrelloLists(projectId, boardId);
+        })
+        .catch(function (err) { alert("Failed: " + err); });
+      }
+    }
+  });
+
+  // Listen for postMessage from callback popup — update display immediately
+  window.addEventListener("message", function (e) {
+    if (e.origin !== window.location.origin) return;
+    if (e.data === "trello_token_stored") {
+      var projectId = getTrelloProjectId();
+      if (projectId) checkProjectTokenStatus(projectId);
+    }
+  });
+
+  // Load cascade dropdowns on page load if token exists
+  (function initTrelloCascade() {
+    var projectId = getTrelloProjectId();
+    var cascadeSection = document.getElementById("trello-cascade-section");
+    if (projectId && cascadeSection && !cascadeSection.hidden) {
+      loadTrelloWorkspaces(projectId);
+    }
+  })();
 
   // =========================================================================
   // Chat UI — home page interactions

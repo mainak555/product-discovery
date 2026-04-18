@@ -151,8 +151,13 @@ def normalize_project(project):
         trello["export_agents"] = _normalize_export_agents(raw_trello, raw_integrations)
         trello["app_name"] = (raw_trello.get("app_name") or "").strip()
         trello["api_key"] = _mask_secret(raw_trello.get("api_key"))
-        trello["default_workspace"] = (raw_trello.get("default_workspace") or "").strip()
+        trello["token"] = _mask_secret(raw_trello.get("token"))
+        trello["token_generated_at"] = (raw_trello.get("token_generated_at") or "").strip()
+        trello["default_workspace_id"] = (raw_trello.get("default_workspace_id") or "").strip()
+        trello["default_workspace_name"] = (raw_trello.get("default_workspace_name") or raw_trello.get("default_workspace") or "").strip()
+        trello["default_board_id"] = (raw_trello.get("default_board_id") or "").strip()
         trello["default_board_name"] = (raw_trello.get("default_board_name") or "").strip()
+        trello["default_list_id"] = (raw_trello.get("default_list_id") or "").strip()
         trello["default_list_name"] = (raw_trello.get("default_list_name") or "").strip()
         raw_trello_mapping = raw_trello.get("export_mapping") or {}
         trello["export_mapping"] = {
@@ -289,6 +294,11 @@ def _restore_masked_secrets(data, existing):
     if isinstance(trello, dict):
         if trello.get("api_key") == SECRET_MASK:
             trello["api_key"] = existing_trello.get("api_key", "")
+        if trello.get("token") == SECRET_MASK:
+            trello["token"] = existing_trello.get("token", "")
+        # Preserve token_generated_at from DB when not explicitly set
+        if not trello.get("token_generated_at"):
+            trello["token_generated_at"] = existing_trello.get("token_generated_at", "")
 
 
 def delete_project(project_id):

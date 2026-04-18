@@ -22,6 +22,14 @@ All routes are under the `server` app namespace.
 | `POST` | `/trello/<session_id>/create-list/` | `trello_create_list` | Create a new list |
 | `POST` | `/trello/<session_id>/extract/` | `trello_extract` | Run extraction agent |
 | `POST` | `/trello/<session_id>/push/` | `trello_push` | Push items to Trello |
+| `GET` | `/trello/project/<project_id>/auth-url/` | `trello_project_auth_url` | Get project Trello auth URL |
+| `POST` | `/trello/project/<project_id>/store-token/` | `trello_project_store_token` | Store project Trello token |
+| `GET` | `/trello/project/<project_id>/token-status/` | `trello_project_token_status` | Check project token |
+| `GET` | `/trello/project/<project_id>/workspaces/` | `trello_project_workspaces` | List workspaces (project creds) |
+| `GET` | `/trello/project/<project_id>/boards/` | `trello_project_boards` | List boards (project creds) |
+| `GET` | `/trello/project/<project_id>/lists/` | `trello_project_lists` | List lists (project creds) |
+| `POST` | `/trello/project/<project_id>/create-board/` | `trello_project_create_board` | Create board (project creds) |
+| `POST` | `/trello/project/<project_id>/create-list/` | `trello_project_create_list` | Create list (project creds) |
 
 See [docs/trello_integration.md](trello_integration.md) for full Trello integration details.
 

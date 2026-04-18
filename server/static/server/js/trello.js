@@ -58,7 +58,6 @@
       + '<div class="export-modal__section" id="trello-token-section">'
       + '<h4>Authorization</h4>'
       + '<div id="trello-token-status">Checking token…</div>'
-      + '<button type="button" class="btn btn--primary btn--sm" id="trello-authorize-btn" hidden>Authorize Trello</button>'
       + '</div>'
       // Destination section
       + '<div class="export-modal__section" id="trello-destination-section" hidden>'
@@ -116,7 +115,6 @@
 
   function _bindModalEvents(overlay) {
     overlay.querySelector("#trello-modal-close").addEventListener("click", closeModal);
-    overlay.querySelector("#trello-authorize-btn").addEventListener("click", _authorize);
 
     overlay.querySelector("#trello-workspace-select").addEventListener("change", function () {
       _loadBoards(this.value);
@@ -199,78 +197,19 @@
     _api("GET", "/trello/" + _state.sessionId + "/token-status/")
       .then(function (d) {
         var statusEl = document.getElementById("trello-token-status");
-        var authBtn = document.getElementById("trello-authorize-btn");
         if (d.valid) {
           statusEl.innerHTML = '<span class="export-modal__token-status export-modal__token-status--valid">✅ Authorized</span>';
-          if (d.expires_at) statusEl.innerHTML += ' <small>(expires ' + new Date(d.expires_at).toLocaleTimeString() + ')</small>';
-          authBtn.hidden = true;
+          if (d.token_generated_at) statusEl.innerHTML += ' <small>(configured ' + d.token_generated_at + ')</small>';
+          // Store defaults for pre-selection
+          if (d.defaults) _state.defaults = d.defaults;
           _showDestination();
         } else {
-          statusEl.textContent = "Not authorized.";
-          authBtn.hidden = false;
+          statusEl.innerHTML = 'Not authorized. <a href="#" onclick="return false;" style="pointer-events:none;">Configure Trello token in Project Settings (edit mode).</a>';
         }
       })
       .catch(function (err) {
         document.getElementById("trello-token-status").textContent = "Error: " + err.message;
-        document.getElementById("trello-authorize-btn").hidden = false;
       });
-  }
-
-  function _authorize() {
-    _setStatus("Opening authorization…");
-    _api("GET", "/trello/" + _state.sessionId + "/auth-url/")
-      .then(function (d) {
-        var popup = window.open(d.url, "trello_auth", "width=600,height=700");
-        if (!popup) { _setStatus("Popup blocked — please allow popups."); return; }
-
-        var handled = false;
-
-        // Listen for postMessage signal from callback page
-        function onMessage(event) {
-          if (event.origin !== window.location.origin) return;
-          if (handled) return;
-          var data = event.data;
-          if (typeof data !== "string" || !data) return;
-
-          if (data === "trello_token_stored") {
-            // Token already stored by callback page — just refresh status
-            handled = true;
-            window.removeEventListener("message", onMessage);
-            try { popup.close(); } catch (e) {}
-            _setStatus("");
-            _checkToken();
-          } else {
-            // Legacy: raw token from postMessage — store it ourselves
-            handled = true;
-            window.removeEventListener("message", onMessage);
-            try { popup.close(); } catch (e) {}
-            _api("POST", "/trello/" + _state.sessionId + "/store-token/", { token: data })
-              .then(function () {
-                _setStatus("");
-                _checkToken();
-              })
-              .catch(function (err) { _setStatus("Error storing token: " + err.message); });
-          }
-        }
-        window.addEventListener("message", onMessage);
-
-        // Poll for popup close — when it closes, re-check token status
-        var pollTimer = setInterval(function () {
-          if (handled) { clearInterval(pollTimer); return; }
-          try {
-            if (popup.closed) {
-              clearInterval(pollTimer);
-              if (!handled) {
-                handled = true;
-                window.removeEventListener("message", onMessage);
-                _setStatus("Verifying authorization…");
-                _checkToken();
-              }
-            }
-          } catch (e) { /* ignore */ }
-        }, 500);
-      })
-      .catch(function (err) { _setStatus("Error: " + err.message); });
   }
 
   // ---------------------------------------------------------------------------
@@ -286,11 +225,13 @@
   function _loadWorkspaces() {
     var sel = document.getElementById("trello-workspace-select");
     sel.innerHTML = '<option value="">Loading…</option>';
+    var defaultWs = (_state.defaults && _state.defaults.default_workspace_id) || "";
     _api("GET", "/trello/" + _state.sessionId + "/workspaces/")
       .then(function (list) {
         var html = '<option value="">(All / Personal)</option>';
         list.forEach(function (w) {
-          html += '<option value="' + w.id + '">' + _esc(w.displayName) + '</option>';
+          var selected = (w.id === defaultWs) ? ' selected' : '';
+          html += '<option value="' + w.id + '"' + selected + '>' + _esc(w.displayName) + '</option>';
         });
         sel.innerHTML = html;
         _loadBoards(sel.value);
@@ -303,16 +244,23 @@
     sel.innerHTML = '<option value="">Loading…</option>';
     var url = "/trello/" + _state.sessionId + "/boards/";
     if (workspaceId) url += "?workspace=" + encodeURIComponent(workspaceId);
+    var defaultBoard = (_state.defaults && _state.defaults.default_board_id) || "";
     _api("GET", url)
       .then(function (list) {
         var html = '<option value="">— Select Board —</option>';
         list.forEach(function (b) {
-          html += '<option value="' + b.id + '">' + _esc(b.name) + '</option>';
+          var selected = (b.id === defaultBoard) ? ' selected' : '';
+          html += '<option value="' + b.id + '"' + selected + '>' + _esc(b.name) + '</option>';
         });
         html += '<option value="__new__">➕ Create New Board</option>';
         sel.innerHTML = html;
         document.getElementById("trello-create-board").hidden = true;
-        document.getElementById("trello-list-select").innerHTML = '<option value="">—</option>';
+        // Auto-load lists if a default board is selected
+        if (defaultBoard && sel.value === defaultBoard) {
+          _loadLists(defaultBoard);
+        } else {
+          document.getElementById("trello-list-select").innerHTML = '<option value="">—</option>';
+        }
         _syncFooter();
       })
       .catch(function (err) { sel.innerHTML = '<option value="">Error</option>'; _setStatus(err.message); });
@@ -321,11 +269,13 @@
   function _loadLists(boardId) {
     var sel = document.getElementById("trello-list-select");
     sel.innerHTML = '<option value="">Loading…</option>';
+    var defaultList = (_state.defaults && _state.defaults.default_list_id) || "";
     _api("GET", "/trello/" + _state.sessionId + "/lists/?board=" + encodeURIComponent(boardId))
       .then(function (list) {
         var html = '<option value="">— Select List —</option>';
         list.forEach(function (l) {
-          html += '<option value="' + l.id + '">' + _esc(l.name) + '</option>';
+          var selected = (l.id === defaultList) ? ' selected' : '';
+          html += '<option value="' + l.id + '"' + selected + '>' + _esc(l.name) + '</option>';
         });
         html += '<option value="__new__">➕ Create New List</option>';
         sel.innerHTML = html;

@@ -68,9 +68,14 @@ Cross-references: [docs/API.md](API.md) (form fields + HTTP schema), [AGENTS.md]
                                 //             empty list = show on all agents' messages
       "app_name": "string",     // required when enabled
       "api_key": "string",      // required when enabled — stored encrypted at rest
-      "default_workspace": "",  // optional
-      "default_board_name": "", // optional
-      "default_list_name": "",  // optional
+      "token": "string",        // Trello token (expiration=never), masked in UI via SECRET_MASK
+      "token_generated_at": "string",  // ISO 8601 UTC datetime when token was generated
+      "default_workspace_id": "",  // Trello workspace/organization ID
+      "default_workspace_name": "", // display name (for readonly view)
+      "default_board_id": "",      // Trello board ID
+      "default_board_name": "",    // display name
+      "default_list_id": "",       // Trello list ID
+      "default_list_name": "",     // display name
       "export_mapping": {
         "model": "",          // optional — blank = fall back to first assistant agent's model
         "temperature": 0.0,   // float 0.0–2.0; 0.0 = deterministic extraction (default)
