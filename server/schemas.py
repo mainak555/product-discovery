@@ -187,7 +187,20 @@ def validate_export_mapping(data):
 
     system_prompt = (data.get("system_prompt") or "").strip()
 
-    return {"system_prompt": system_prompt}
+    model = (data.get("model") or "").strip()
+    valid_models = get_agent_model_names()
+    if model and model not in valid_models:
+        raise ValueError(
+            f"'integrations.trello.export_mapping.model' '{model}' is not in the model catalog."
+        )
+
+    try:
+        temperature = float(data.get("temperature") or 0.0)
+    except (TypeError, ValueError):
+        temperature = 0.0
+    temperature = max(0.0, min(2.0, temperature))
+
+    return {"system_prompt": system_prompt, "model": model, "temperature": temperature}
 
 
 def validate_integrations(data, agent_names):
@@ -195,22 +208,14 @@ def validate_integrations(data, agent_names):
     if not isinstance(data, dict):
         return {
             "enabled": False,
-            "export_agent": "",
             "trello": {"enabled": False},
         }
 
     enabled = bool(data.get("enabled", False))
 
-    export_agent = (data.get("export_agent") or "").strip()
-    if export_agent and export_agent.lower() not in [n.lower() for n in agent_names]:
-        raise ValueError(
-            f"'integrations.export_agent' must match an existing agent name or be blank."
-        )
-
     if not enabled:
         return {
             "enabled": False,
-            "export_agent": "",
             "trello": {"enabled": False},
         }
 
@@ -228,6 +233,19 @@ def validate_integrations(data, agent_names):
         if not api_key:
             raise ValueError("'integrations.trello.api_key' is required when Trello is enabled.")
 
+        # Validate export_agents list
+        raw_ea = raw_trello.get("export_agents") or []
+        if isinstance(raw_ea, str):
+            raw_ea = [raw_ea] if raw_ea else []
+        export_agents = [n.strip() for n in raw_ea if isinstance(n, str) and n.strip()]
+        lower_names = [n.lower() for n in agent_names]
+        for ea in export_agents:
+            if ea.lower() not in lower_names:
+                raise ValueError(
+                    f"'integrations.trello.export_agents' entry '{ea}' must match an existing agent name."
+                )
+
+        trello["export_agents"] = export_agents
         trello["app_name"] = app_name
         trello["api_key"] = api_key
         trello["default_workspace"] = (raw_trello.get("default_workspace") or "").strip()
@@ -244,7 +262,6 @@ def validate_integrations(data, agent_names):
 
     return {
         "enabled": enabled,
-        "export_agent": export_agent,
         "trello": trello,
     }
 

@@ -59,6 +59,18 @@ def _mask_secret(value):
     return SECRET_MASK if value else ""
 
 
+def _normalize_export_agents(raw_trello, raw_integrations):
+    """Return a list of export agent names, migrating legacy single-string field."""
+    raw_ea = raw_trello.get("export_agents")
+    if raw_ea is None:
+        # Backward-compat: old documents stored a single string at integrations root
+        legacy = (raw_integrations.get("export_agent") or "").strip()
+        return [legacy] if legacy else []
+    if isinstance(raw_ea, str):
+        return [raw_ea.strip()] if raw_ea.strip() else []
+    return [n.strip() for n in raw_ea if isinstance(n, str) and n.strip()]
+
+
 def normalize_project(project):
     """Normalize stored project documents for display across old and new schemas."""
     if not project:
@@ -136,6 +148,7 @@ def normalize_project(project):
     trello_enabled = bool(raw_trello.get("enabled", False))
     trello = {"enabled": trello_enabled}
     if trello_enabled:
+        trello["export_agents"] = _normalize_export_agents(raw_trello, raw_integrations)
         trello["app_name"] = (raw_trello.get("app_name") or "").strip()
         trello["api_key"] = _mask_secret(raw_trello.get("api_key"))
         trello["default_workspace"] = (raw_trello.get("default_workspace") or "").strip()
@@ -144,11 +157,12 @@ def normalize_project(project):
         raw_trello_mapping = raw_trello.get("export_mapping") or {}
         trello["export_mapping"] = {
             "system_prompt": (raw_trello_mapping.get("system_prompt") or "").strip(),
+            "model": (raw_trello_mapping.get("model") or "").strip(),
+            "temperature": _coerce_temperature(raw_trello_mapping.get("temperature", 0.0)),
         }
 
     integrations = {
         "enabled": integrations_enabled,
-        "export_agent": (raw_integrations.get("export_agent") or "").strip(),
         "trello": trello,
     }
 

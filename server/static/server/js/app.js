@@ -486,10 +486,15 @@ document.addEventListener("DOMContentLoaded", function () {
         + '<button class="btn btn--danger human-gate-btn human-gate-btn--stop">\uD83D\uDED1 Stop</button>'
         + '</div>';
 
-    // Add export buttons to gate panel when export_agent is blank (export on gate)
+    // Add export buttons to gate panel when no specific export agents are set (export on gate)
     var exportHtml = "";
-    if (data.export && data.export.enabled && !data.export.export_agent) {
-      exportHtml = buildExportButtons(data.export);
+    if (data.export && data.export.enabled) {
+      var allOpen = (data.export.providers || []).some(function (p) {
+        return !p.export_agents || !p.export_agents.length;
+      });
+      if (allOpen) {
+        exportHtml = buildExportButtons(data.export);
+      }
     }
 
     chatMessages.insertAdjacentHTML(
@@ -581,8 +586,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function shouldShowExport(exportMeta, agentName) {
     if (!exportMeta || !exportMeta.enabled) return false;
-    if (!exportMeta.export_agent) return true;
-    return exportMeta.export_agent.toLowerCase() === (agentName || "").toLowerCase();
+    var lower = (agentName || "").toLowerCase();
+    return (exportMeta.providers || []).some(function (p) {
+      if (!p.export_agents || !p.export_agents.length) return true;
+      return p.export_agents.some(function (n) { return n.toLowerCase() === lower; });
+    });
   }
 
   function handleSSEEvent(eventName, data) {

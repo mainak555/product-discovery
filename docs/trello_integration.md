@@ -17,15 +17,17 @@ The Trello integration uses a three-file backend split plus a dedicated JS modul
 ```yaml
 integrations:
   enabled: true
-  export_agent: ""          # blank = show on every message
   trello:
     enabled: true
+    export_agents: []       # empty = show on every message; list of agent names to restrict
     app_name: "MyApp"       # required — shown in Trello auth popup
     api_key: "abc..."       # required — masked in UI, stays server-side
     default_workspace: ""   # optional — pre-select in modal
     default_board_name: ""  # optional
     default_list_name: ""   # optional
     export_mapping:
+      model: ""             # blank = fall back to first assistant agent's model
+      temperature: 0.0      # extraction sampling temperature (0.0 = deterministic)
       system_prompt: "..."  # extraction prompt
 ```
 

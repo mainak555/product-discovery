@@ -55,6 +55,30 @@ Cross-references: [docs/API.md](API.md) (form fields + HTTP schema), [AGENTS.md]
     "system_prompt": "string — routing instructions; {roles}, {history}, {participants} expanded by AutoGen",
     "temperature":   0.0,  // float, 0.0–2.0; 0.0 = deterministic routing (recommended)
     "allow_repeated_speaker": true  // bool
+  },
+
+  // ── Integrations (optional) ───────────────────────────────────────────────
+  "integrations": {
+    "enabled": false,           // bool — master toggle
+
+    // ── Trello ────────────────────────────────────────────────────────────
+    "trello": {
+      "enabled": false,         // bool
+      "export_agents": [],      // list[str] — agent names whose messages show the Export button;
+                                //             empty list = show on all agents' messages
+      "app_name": "string",     // required when enabled
+      "api_key": "string",      // required when enabled — stored encrypted at rest
+      "default_workspace": "",  // optional
+      "default_board_name": "", // optional
+      "default_list_name": "",  // optional
+      "export_mapping": {
+        "model": "",          // optional — blank = fall back to first assistant agent's model
+        "temperature": 0.0,   // float 0.0–2.0; 0.0 = deterministic extraction (default)
+        "system_prompt": "string"  // extraction prompt given to the LLM
+      }
+    }
+    // Future integrations (e.g. Jira) follow the same pattern:
+    // "jira": { "enabled": false, "export_agents": [], ... }
   }
 }
 ```
@@ -80,6 +104,16 @@ naming across agent and team layers.
 ### `team.max_iterations`
 Stored on `team`, not at the top level. `normalize_project()` falls back to the legacy
 top-level `max_iterations` for backward compatibility with old documents.
+
+### `integrations.trello.export_agents`
+Stored as a list of agent name strings. An empty list means all agents' messages will show
+the Trello Export button. Legacy documents may have `integrations.export_agent` (a single
+string) instead — `_normalize_export_agents()` in `services.py` migrates that on read
+without requiring a DB migration script.
+
+Each future integration (e.g. `jira`) stores its own `export_agents` list at the same
+depth: `integrations.jira.export_agents`. The `integrations` root never holds an
+`export_agent` field in new documents.
 
 ---
 

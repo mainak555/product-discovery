@@ -12,7 +12,13 @@ import re
 from agents.factory import build_model_client
 
 
-def run_extraction(system_prompt: str, discussion_text: str, project: dict) -> list[dict]:
+def run_extraction(
+    system_prompt: str,
+    discussion_text: str,
+    project: dict,
+    model: str | None = None,
+    temperature: float = 0.0,
+) -> list[dict]:
     """Run the extraction agent synchronously and return the parsed items list.
 
     Parameters
@@ -22,7 +28,12 @@ def run_extraction(system_prompt: str, discussion_text: str, project: dict) -> l
     discussion_text : str
         Concatenated discussion to extract from.
     project : dict
-        Raw project document (with agent list for model selection).
+        Raw project document (with agent list for model selection fallback).
+    model : str | None
+        Explicit model name from export_mapping config. Falls back to the
+        first assistant agent's model when blank.
+    temperature : float
+        Sampling temperature for the extraction call (default ``0.0``).
 
     Returns
     -------
@@ -32,15 +43,16 @@ def run_extraction(system_prompt: str, discussion_text: str, project: dict) -> l
     if not system_prompt:
         raise ValueError("Extraction system_prompt is empty. Configure it in the project integrations.")
 
-    # Pick the first agent's model for extraction
-    agents = project.get("agents") or []
-    if not agents:
-        raise ValueError("No agents configured in project — cannot determine extraction model.")
-
-    agent_cfg = agents[0]
-    model_name = agent_cfg.get("model") or agent_cfg.get("model_name")
+    # Resolve model — use explicit mapping model or fall back to first agent
+    model_name = (model or "").strip()
     if not model_name:
-        raise ValueError("First agent has no model configured.")
+        agents = project.get("agents") or []
+        if not agents:
+            raise ValueError("No agents configured in project — cannot determine extraction model.")
+        agent_cfg = agents[0]
+        model_name = agent_cfg.get("model") or agent_cfg.get("model_name")
+        if not model_name:
+            raise ValueError("First agent has no model configured.")
 
     client = build_model_client(model_name)
 

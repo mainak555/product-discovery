@@ -241,6 +241,8 @@ def run_export_extract(session_id):
 
     mapping = trello_cfg.get("export_mapping") or {}
     system_prompt = mapping.get("system_prompt", "")
+    extraction_model = (mapping.get("model") or "").strip()
+    extraction_temperature = float(mapping.get("temperature") or 0.0)
 
     discussion = session_doc.get("discussion") or []
     discussion_text = "\n\n".join(
@@ -251,7 +253,13 @@ def run_export_extract(session_id):
         raise ValueError("No discussion content to extract from.")
 
     from agents.integrations.extractor import run_extraction
-    return run_extraction(system_prompt, discussion_text, project)
+    return run_extraction(
+        system_prompt,
+        discussion_text,
+        project,
+        model=extraction_model,
+        temperature=extraction_temperature,
+    )
 
 
 def run_export_push(session_id, list_id, items):

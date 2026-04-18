@@ -64,8 +64,29 @@ config.html                        ← Full HTML document, loaded once
 - **Human gate**: single optional section with enable toggle, `name`, and `interaction_mode` (`approve_reject` or `feedback`). `approve_reject` pauses after each round and lets the user approve (continue) or reject (provide feedback). `feedback` always collects free-text feedback before continuing.
 - **Team**: nested config with `type` and `max_iterations`. Supported types:
   - `round_robin` — agents take turns in fixed order.
-  - `selector` — a dedicated model client routes between agents each turn. Requires `model`, `system_prompt` (supports `{roles}`, `{history}`, `{participants}`), `temperature` (default `0.0`), and `allow_repeated_speaker`.
+  - `selector` — a dedicated model client routes between agents each turn. Requires `model`, `system_prompt` (supports `{roles}`, `{history}`, `{participants}`), `temperature` (default `0.0`), and `allow_repeated_speaker`. Selector fields are wrapped in an `.agent-card` container (edit) / `.agent-card--readonly` card (readonly) with header "Selector Agent" / "Selector", matching assistant agent cards.
+- **Integrations → Trello → Export Agents**: checkboxes (`name="integrations[trello][export_agents]"`) rendered inside `#integrations-trello-fields` as the first element (above App Name). Leaving all unchecked means every agent's messages show the export button. Synced dynamically by `syncExportAgentCheckboxes()` whenever agent names change.
+- **Integrations → Trello → Extraction Prompt**: the extraction `system_prompt` used to parse discussions into Trello cards. Rendered as a bare `form-group` textarea in edit mode (no card wrapper). In readonly mode it appears as an `.agent-card__detail` row inside the Trello card.
 - **Model list**: loaded from root `agent_models.json` and always shown in ascending order.
+
+### Agent Card Convention
+
+All `system_prompt` fields for agents and the selector **must** be rendered inside `.agent-card` containers in both edit and readonly views. This ensures a consistent look across assistant agents and the selector agent.
+
+Integration extraction prompts (e.g., Trello's extraction prompt) are **not** wrapped in a card — they appear as bare `form-group` elements in edit mode and as `agent-card__detail` rows inside the integration's card in readonly mode.
+
+**Edit mode:**
+- Wrap fields in a `<div class="agent-card">`.
+- Header: `<div class="agent-card__header">` containing `<span class="agent-card__number">Card Title</span>`. Non-assistant cards omit the remove button.
+- Place `form-group` elements (model, temperature, prompt textarea, etc.) inside the card body.
+
+**Readonly mode:**
+- Use `<div class="agent-card agent-card--readonly">`.
+- Header: `<div class="agent-card__header">` with `<strong>Name</strong>` and `<span class="badge">Model</span>` (when applicable).
+- Detail rows: `<div class="agent-card__detail"><strong>Label:</strong> value</div>`.
+- System prompts: `<pre class="agent-card__prompt">{{ prompt }}</pre>` inside a detail row.
+
+When adding a new integration that has its own `system_prompt` (e.g., a Jira extraction prompt), follow this pattern to keep the UI identical to existing cards.
 
 ## Secret Key Gating
 

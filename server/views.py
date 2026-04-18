@@ -75,9 +75,9 @@ def _build_project_data(post_data):
 
     integrations = {
         "enabled": integrations_enabled,
-        "export_agent": post_data.get("integrations[export_agent]", "").strip(),
         "trello": {
             "enabled": trello_enabled,
+            "export_agents": [n.strip() for n in post_data.getlist("integrations[trello][export_agents]") if n.strip()],
             "app_name": post_data.get("integrations[trello][app_name]", "").strip(),
             "api_key": post_data.get("integrations[trello][api_key]", "").strip(),
             "default_workspace": post_data.get("integrations[trello][default_workspace]", "").strip(),
@@ -85,6 +85,8 @@ def _build_project_data(post_data):
             "default_list_name": post_data.get("integrations[trello][default_list_name]", "").strip(),
             "export_mapping": {
                 "system_prompt": post_data.get("integrations[trello][export_mapping][system_prompt]", "").strip(),
+                "model": post_data.get("integrations[trello][export_mapping][model]", "").strip(),
+                "temperature": post_data.get("integrations[trello][export_mapping][temperature]", "0.0").strip(),
             },
         },
     }
@@ -496,7 +498,6 @@ async def chat_session_run(request, session_id):
         # Export integration metadata for client-side export buttons
         integrations = project.get("integrations") or {}
         export_enabled = integrations.get("enabled", False)
-        export_agent = integrations.get("export_agent", "")
         export_providers = []
         if export_enabled:
             trello_cfg = integrations.get("trello") or {}
@@ -504,13 +505,13 @@ async def chat_session_run(request, session_id):
                 export_providers.append({
                     "name": "trello",
                     "label": "Trello",
+                    "export_agents": trello_cfg.get("export_agents") or [],
                     "default_board_name": trello_cfg.get("default_board_name", ""),
                     "default_list_name": trello_cfg.get("default_list_name", ""),
                 })
 
         export_meta = {
             "enabled": export_enabled and len(export_providers) > 0,
-            "export_agent": export_agent,
             "providers": export_providers,
         } if export_enabled else None
 

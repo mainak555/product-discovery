@@ -51,13 +51,18 @@
       <strong>Max Iterations:</strong> {{ project.team.max_iterations }}
     </p>
     {% if project.team.type == 'selector' %}
-      <p>
-        <strong>Model:</strong> {{ project.team.model }} &nbsp;|&nbsp;
-        <strong>Temperature:</strong> {{ project.team.temperature }}
-      </p>
-      <div class="agent-card__detail">
-        <strong>System Prompt:</strong>
-        <pre class="agent-card__prompt">{{ project.team.system_prompt }}</pre>
+      <div class="agent-card agent-card--readonly">
+        <div class="agent-card__header">
+          <strong>Selector</strong>
+          <span class="badge">{{ project.team.model }}</span>
+        </div>
+        <div class="agent-card__detail">
+          <strong>Temperature:</strong> {{ project.team.temperature }}
+        </div>
+        <div class="agent-card__detail">
+          <strong>System Prompt:</strong>
+          <pre class="agent-card__prompt">{{ project.team.system_prompt }}</pre>
+        </div>
       </div>
     {% endif %}
   </div>
@@ -65,36 +70,53 @@
   {% if project.integrations.enabled %}
   <div class="config-readonly__section">
     <h3>Integrations</h3>
-    {% if project.integrations.export_agent %}
-      <p><strong>Export Agent:</strong> {{ project.integrations.export_agent }}</p>
-    {% endif %}
 
     {% if project.integrations.trello.enabled %}
       <div class="agent-card agent-card--readonly">
+
+        {# Row 1: Trello  +  model badge at right #}
         <div class="agent-card__header">
           <strong>Trello</strong>
+          {% if project.integrations.trello.export_mapping.model %}
+          <span class="badge">{{ project.integrations.trello.export_mapping.model }}</span>
+          {% endif %}
         </div>
+
+        {# Row 2: App Name #}
+        {% if project.integrations.trello.app_name %}
         <div class="agent-card__detail">
           <strong>App Name:</strong> {{ project.integrations.trello.app_name }}
         </div>
+        {% endif %}
+
+        {# Row 2: <Workspace> | <Board> | <List> (omitted when all blank) #}
+        {% with ws=project.integrations.trello.default_workspace board=project.integrations.trello.default_board_name lst=project.integrations.trello.default_list_name %}
+        {% if ws or board or lst %}
         <div class="agent-card__detail">
-          <strong>API Key:</strong> {{ project.integrations.trello.api_key }}
-        </div>
-        {% if project.integrations.trello.default_workspace %}
-        <div class="agent-card__detail">
-          <strong>Workspace:</strong> {{ project.integrations.trello.default_workspace }}
+          {% if ws %}{{ ws }}{% endif %}{% if ws and board %} &nbsp;|&nbsp; {% endif %}{% if board %}{{ board }}{% endif %}{% if board and lst %} &nbsp;|&nbsp; {% endif %}{% if lst %}{{ lst }}{% endif %}
         </div>
         {% endif %}
-        {% if project.integrations.trello.default_board_name %}
+        {% endwith %}
+
+        {# Row 3: Export Agents as pills #}
+        {% if project.integrations.trello.export_agents %}
         <div class="agent-card__detail">
-          <strong>Board:</strong> {{ project.integrations.trello.default_board_name }}
+          <strong>Export Agents:</strong>
+          {% for name in project.integrations.trello.export_agents %}<span class="badge">{{ name }}</span> {% endfor %}
         </div>
         {% endif %}
-        {% if project.integrations.trello.default_list_name %}
+
+        {# Rows 4-5: Temperature + Extraction Prompt (only when prompt is set) #}
+        {% if project.integrations.trello.export_mapping.system_prompt %}
         <div class="agent-card__detail">
-          <strong>List:</strong> {{ project.integrations.trello.default_list_name }}
+          <strong>Temperature:</strong> {{ project.integrations.trello.export_mapping.temperature }}
+        </div>
+        <div class="agent-card__detail">
+          <strong>Extraction Prompt:</strong>
+          <pre class="agent-card__prompt">{{ project.integrations.trello.export_mapping.system_prompt }}</pre>
         </div>
         {% endif %}
+
       </div>
     {% endif %}
   </div>

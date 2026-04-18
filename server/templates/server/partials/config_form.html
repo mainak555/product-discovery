@@ -135,48 +135,54 @@
 
     <!-- Selector-specific fields — shown only when team type = selector -->
     <div id="selector-fields" {% if project.team.type != 'selector' %}hidden{% endif %}>
-      <div class="form-group">
-        <label for="team-model">Selector Model</label>
-        <select id="team-model" name="team[model]" class="input">
-          <option value="" disabled>— choose a model —</option>
-          {% for m in model_names %}
-            <option value="{{ m }}" {% if project.team.model == m %}selected{% endif %}>{{ m }}</option>
-          {% endfor %}
-        </select>
-        <small class="form-hint">Model used exclusively for agent routing decisions.</small>
-      </div>
+      <div class="agent-card">
+        <div class="agent-card__header">
+          <span class="agent-card__number">Selector Agent</span>
+        </div>
 
-      <div class="form-group">
-        <label for="team-temperature">Selector Temperature</label>
-        <input type="number"
-               id="team-temperature"
-               name="team[temperature]"
-               class="input input--sm"
-               value="{{ project.team.temperature|default:'0.0' }}"
-               step="0.1"
-               min="0"
-               max="2">
-        <small class="form-hint">0.0 = deterministic routing (recommended).</small>
-      </div>
+        <div class="form-group">
+          <label for="team-model">Selector Model</label>
+          <select id="team-model" name="team[model]" class="input">
+            <option value="" disabled>— choose a model —</option>
+            {% for m in model_names %}
+              <option value="{{ m }}" {% if project.team.model == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+          <small class="form-hint">Model used exclusively for agent routing decisions.</small>
+        </div>
 
-      <div class="form-group">
-        <label for="team-system-prompt">Selector Prompt</label>
-        <textarea id="team-system-prompt"
-                  name="team[system_prompt]"
-                  class="input input--textarea input--sm input--prompt"
-                  rows="12"
-                  placeholder="Paste the selector prompt…">{% if project.team.system_prompt %}{{ project.team.system_prompt }}{% else %}{{ selector_prompt_hint }}{% endif %}</textarea>
-        <small class="form-hint">Use <code>{roles}</code>, <code>{history}</code>, <code>{participants}</code> placeholders.</small>
-      </div>
+        <div class="form-group">
+          <label for="team-temperature">Selector Temperature</label>
+          <input type="number"
+                 id="team-temperature"
+                 name="team[temperature]"
+                 class="input input--sm"
+                 value="{{ project.team.temperature|default:'0.0' }}"
+                 step="0.1"
+                 min="0"
+                 max="2">
+          <small class="form-hint">0.0 = deterministic routing (recommended).</small>
+        </div>
 
-      <div class="form-group form-group--inline">
-        <label>
-          <input type="checkbox"
-                 id="allow_repeated_speaker"
-                 name="team[allow_repeated_speaker]"
-                 {% if project.team.allow_repeated_speaker|default:True %}checked{% endif %}>
-          Allow repeated speaker
-        </label>
+        <div class="form-group">
+          <label for="team-system-prompt">Selector Prompt</label>
+          <textarea id="team-system-prompt"
+                    name="team[system_prompt]"
+                    class="input input--textarea input--sm input--prompt"
+                    rows="12"
+                    placeholder="Paste the selector prompt…">{% if project.team.system_prompt %}{{ project.team.system_prompt }}{% else %}{{ selector_prompt_hint }}{% endif %}</textarea>
+          <small class="form-hint">Use <code>{roles}</code>, <code>{history}</code>, <code>{participants}</code> placeholders.</small>
+        </div>
+
+        <div class="form-group form-group--inline">
+          <label>
+            <input type="checkbox"
+                   id="allow_repeated_speaker"
+                   name="team[allow_repeated_speaker]"
+                   {% if project.team.allow_repeated_speaker|default:True %}checked{% endif %}>
+            Allow repeated speaker
+          </label>
+        </div>
       </div>
     </div>
 
@@ -198,21 +204,6 @@
 
     <div id="integrations-fields" {% if not project.integrations.enabled %}hidden{% endif %}>
 
-      <div class="form-group">
-        <label for="integrations-export-agent">Export Agent</label>
-        <select id="integrations-export-agent"
-                name="integrations[export_agent]"
-                class="input">
-          <option value="">— All agents (show export on every message) —</option>
-          {% if project.agents %}
-            {% for agent in project.agents %}
-              <option value="{{ agent.name }}" {% if project.integrations.export_agent == agent.name %}selected{% endif %}>{{ agent.name }}</option>
-            {% endfor %}
-          {% endif %}
-        </select>
-        <small class="form-hint">If set, the Export button only appears on this agent's messages.</small>
-      </div>
-
       <!-- ---- Trello ---- -->
       <fieldset class="form-group form-group--nested">
         <legend>Trello</legend>
@@ -228,6 +219,26 @@
         </div>
 
         <div id="integrations-trello-fields" {% if not project.integrations.trello.enabled %}hidden{% endif %}>
+          <div class="form-group">
+            <label>Export Agents</label>
+            <div id="integrations-export-agents">
+              {% if project.agents %}
+                {% for agent in project.agents %}
+                  <div class="form-group form-group--inline">
+                    <label>
+                      <input type="checkbox"
+                             name="integrations[trello][export_agents]"
+                             value="{{ agent.name }}"
+                             {% if agent.name in project.integrations.trello.export_agents %}checked{% endif %}>
+                      {{ agent.name }}
+                    </label>
+                  </div>
+                {% endfor %}
+              {% endif %}
+            </div>
+            <small class="form-hint">Checked agents show a Trello Export button. Leave all unchecked to show on every message.</small>
+          </div>
+
           <div class="form-group">
             <label for="trello-app-name">App Name</label>
             <input type="text"
@@ -279,6 +290,35 @@
                      class="input input--sm"
                      value="{{ project.integrations.trello.default_list_name|default:'' }}"
                      placeholder="To Do">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="trello-export-model">Extraction Model</label>
+              <select id="trello-export-model"
+                      name="integrations[trello][export_mapping][model]"
+                      class="input input--sm">
+                <option value="">— same as first agent —</option>
+                {% for model_name in model_names %}
+                  <option value="{{ model_name }}"
+                          {% if project.integrations.trello.export_mapping.model == model_name %}selected{% endif %}>
+                    {{ model_name }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="trello-export-temperature">Temperature</label>
+              <input type="number"
+                     id="trello-export-temperature"
+                     name="integrations[trello][export_mapping][temperature]"
+                     class="input input--sm"
+                     value="{{ project.integrations.trello.export_mapping.temperature|default:'0.0' }}"
+                     step="0.1"
+                     min="0"
+                     max="2"
+                     placeholder="0.0">
             </div>
           </div>
 
