@@ -260,7 +260,7 @@
                    class="input input--sm"
                    value="{{ project.integrations.trello.api_key|default:'' }}"
                    placeholder="Paste your Trello API key">
-            <small class="form-hint">Get from <a href="https://trello.com/power-ups/admin" target="_blank" rel="noopener">Trello Power-Ups admin</a>.</small>
+            <small class="form-hint">Get from <a href="https://trello.com/power-ups/admin" target="_blank" rel="noopener">Trello Power-Ups admin</a>. After entering, <strong>save the config first</strong>, then generate the token below.</small>
           </div>
 
           <!-- Token row (edit mode only, visible when API key entered) -->
@@ -277,7 +277,8 @@
                       class="btn btn--primary btn--sm js-requires-secret"
                       id="trello-generate-token-btn"
                       {% if mode == 'create' %}disabled{% endif %}>
-                Generate Token
+                <span id="trello-generate-btn-label">Generate Token</span>
+                <span id="trello-generate-btn-spinner" hidden aria-hidden="true">&#x23F3; Authorizing&hellip;</span>
               </button>
             </div>
             {% if project.integrations.trello.token_generated_at %}

@@ -264,31 +264,50 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // --- Token generation via popup ---
+
+  function _setTokenBtnLoading(loading) {
+    var btn = document.getElementById("trello-generate-token-btn");
+    var label = document.getElementById("trello-generate-btn-label");
+    var spinner = document.getElementById("trello-generate-btn-spinner");
+    if (!btn) return;
+    btn.disabled = loading;
+    if (label) label.hidden = loading;
+    if (spinner) spinner.hidden = !loading;
+  }
+
   document.body.addEventListener("click", function (e) {
-    if (!e.target.matches("#trello-generate-token-btn")) return;
+    if (!e.target.closest("#trello-generate-token-btn")) return;
     e.preventDefault();
 
     var projectId = getTrelloProjectId();
     var secretKey = getTrelloSecretKey();
     if (!projectId || !secretKey) { alert("Save the project and enter the Secret Key first."); return; }
 
+    _setTokenBtnLoading(true);
+
     fetch("/trello/project/" + encodeURIComponent(projectId) + "/auth-url/", {
       headers: { "X-App-Secret-Key": secretKey }
     })
     .then(function (r) { return r.json(); })
     .then(function (data) {
-      if (data.error) { alert(data.error); return; }
-      // Open Trello auth popup
+      if (data.error) { _setTokenBtnLoading(false); alert(data.error); return; }
       var popup = window.open(data.url, "TrelloAuth", "width=600,height=700");
-      // Poll for completion
+      if (!popup) {
+        _setTokenBtnLoading(false);
+        alert("Popup blocked \u2014 please allow popups for this page and try again.");
+        return;
+      }
+      // Poll until popup closes, then refresh status
       var poll = setInterval(function () {
-        if (popup && popup.closed) {
-          clearInterval(poll);
-          checkProjectTokenStatus(projectId);
-        }
+        try {
+          if (popup.closed) {
+            clearInterval(poll);
+            checkProjectTokenStatus(projectId);
+          }
+        } catch (ex) { /* cross-origin, ignore */ }
       }, 500);
     })
-    .catch(function (err) { alert("Failed to start Trello auth: " + err); });
+    .catch(function (err) { _setTokenBtnLoading(false); alert("Failed to start Trello auth: " + err); });
   });
 
   function checkProjectTokenStatus(projectId) {
@@ -297,6 +316,7 @@ document.addEventListener("DOMContentLoaded", function () {
     })
     .then(function (r) { return r.json(); })
     .then(function (data) {
+      _setTokenBtnLoading(false);
       var display = document.getElementById("trello-token-display");
       var genAt = document.getElementById("trello-token-generated-at");
       var cascadeSection = document.getElementById("trello-cascade-section");
