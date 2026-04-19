@@ -10,7 +10,8 @@ The Trello integration uses a three-file backend split plus a dedicated JS modul
 | `server/trello_service.py` | Business logic — token CRUD, credential resolution, orchestration |
 | `server/trello_views.py` | Django views (thin controllers) — JSON API endpoints |
 | `server/trello_urls.py` | URL routing — included under `/trello/` prefix |
-| `server/static/server/js/trello.js` | Frontend modal — auth flow, cascade dropdowns, extract & push |
+| `server/static/server/js/trello_config.js` | Config page Trello settings UX — token auth flow, cascade defaults, create board/list |
+| `server/static/server/js/trello.js` | Chat export modal — destination picker, extract preview, push to Trello |
 
 ## Project Config Schema
 

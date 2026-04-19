@@ -1,0 +1,48 @@
+# Frontend JavaScript Architecture
+
+This project uses small feature-focused JavaScript modules.
+The goal is to prevent `app.js` from becoming a catch-all file.
+
+## Module Ownership
+
+| Module | Scope | Allowed Responsibilities | Not Allowed |
+|---|---|---|---|
+| `server/static/server/js/app.js` | Shared SPA shell behavior across pages | HTMX secret-key header injection, generic form state, agent-card add/remove/reindex, chat UI interactions | Feature-specific integration workflows (Trello, Jira, etc.) |
+| `server/static/server/js/trello_config.js` | Config page only (`config_form.html`) | Trello token generation, token status sync, workspace/board/list cascade defaults, create board/list modal | Chat export modal behavior |
+| `server/static/server/js/trello.js` | Home chat page export flow | Export modal open/close, extraction preview, destination selection, push to Trello | Config-page settings and token generation UX |
+
+## Script Loading Rules
+
+1. Load only the scripts a page needs.
+2. Keep feature modules independent from each other.
+3. Shared helpers stay in `app.js`; feature modules can expose a small namespace on `window` when needed.
+
+Current template usage:
+- `config.html`: `app.js`, `trello_config.js`
+- `home.html`: `app.js`, `trello.js`
+
+## Event Contract
+
+1. `app.js` owns common form sync and may call optional feature hooks when present.
+2. Feature modules should provide one idempotent sync entry point for re-render scenarios:
+   - Example: `window.TrelloConfig.syncFromForm()`
+3. Feature modules must be resilient to HTMX swaps (`htmx:afterSwap`) and no-op when their DOM is absent.
+
+## Adding a New Frontend Feature
+
+1. Create a new module under `server/static/server/js/<feature>.js`.
+2. Add a short file header describing scope and non-goals.
+3. Keep selectors and listeners scoped to that feature's DOM.
+4. Load the new script only on pages that render the feature.
+5. Update docs:
+   - `docs/UI.md` (user-facing interaction flow)
+   - `docs/ARCHITECTURE.md` (module boundary summary)
+   - Feature doc if one exists (for example `docs/trello_integration.md`)
+
+## Review Checklist
+
+- Is this logic feature-specific rather than shared?
+- If yes, does it live outside `app.js`?
+- Does the module cleanly no-op when the related DOM is missing?
+- Are HTMX swap re-initialization and state sync handled?
+- Were docs updated with ownership and loading changes?

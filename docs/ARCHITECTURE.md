@@ -90,3 +90,12 @@ See [docs/agent_factory.md](agent_factory.md) for the full `agent_models.json` s
 - **Model catalog**: `agent_models.json` is keyed by model name; Azure deployments use the optional `deployment_name` field (defaults to model key). See [docs/agent_factory.md](agent_factory.md) for schema details.
 - **SCSS**: Compiled at request time in dev, offline in production.
 - **Template naming**: Partials in `partials/` subdirectory, prefixed with `_` for includes.
+
+## Frontend JS Boundaries
+
+- `server/static/server/js/app.js`: shared SPA helpers only (secret header injection, generic form state, agent-card dynamics, chat UI).
+- `server/static/server/js/trello_config.js`: Trello project-configuration behavior only (token generation, workspace/board/list cascade, create board/list modal).
+- `server/static/server/js/trello.js`: Trello export modal for chat sessions only.
+
+When adding new UI behavior, create a dedicated module for a distinct feature surface instead of extending `app.js`.
+See [docs/frontend_js_architecture.md](frontend_js_architecture.md) for the module ownership and event contract.

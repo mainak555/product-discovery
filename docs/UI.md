@@ -58,6 +58,15 @@ config.html                        ← Full HTML document, loaded once
 - **Team type toggle**: Shows or hides the `#selector-fields` section when `team_type` changes.
 - **Toast dismiss**: Auto-fades success alerts after 4 seconds.
 
+`trello_config.js` handles (config page only):
+- Trello integration toggle field state in `#integrations-trello-fields`.
+- Trello token generation button state and popup auth flow.
+- Token status refresh and hidden token metadata sync.
+- Trello cascade defaults (`workspace -> board -> list`) and inline create board/list modal.
+
+`trello.js` handles (home chat page only):
+- Trello export modal for extracting and pushing chat output to Trello.
+
 ## Configuration Surface
 
 - **Assistant agents**: each card stores `name`, `model`, `system_prompt`, and `temperature`. The project `objective` is automatically appended to each agent's resolved system prompt at runtime.
