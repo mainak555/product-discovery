@@ -12,22 +12,25 @@ initial task so agents retain context.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from autogen_agentchat.teams import RoundRobinGroupChat
+    from autogen_agentchat.teams import RoundRobinGroupChat, SelectorGroupChat
     from autogen_core import CancellationToken
 
-# session_id → RoundRobinGroupChat
-_TEAM_CACHE: dict[str, "RoundRobinGroupChat"] = {}
+# session_id → team instance
+_TEAM_CACHE: dict[str, "RoundRobinGroupChat | SelectorGroupChat"] = {}
 
 # session_id → CancellationToken
 _CANCEL_TOKENS: dict[str, "CancellationToken"] = {}
 
 
-def get_or_build_team(session_id: str, project: dict) -> tuple["RoundRobinGroupChat", "CancellationToken"]:
+def get_or_build_team(
+    session_id: str,
+    project: dict,
+) -> tuple["RoundRobinGroupChat | SelectorGroupChat", "CancellationToken", bool]:
     """
-    Return (team, cancellation_token) for session_id.
+    Return (team, cancellation_token, cache_miss) for session_id.
 
     Builds a fresh team on cache miss. Existing teams retain AutoGen's
     internal conversation history for stateful resumption.
@@ -35,11 +38,22 @@ def get_or_build_team(session_id: str, project: dict) -> tuple["RoundRobinGroupC
     from autogen_core import CancellationToken as CT
     from .team_builder import build_team
 
-    if session_id not in _TEAM_CACHE:
+    cache_miss = session_id not in _TEAM_CACHE
+    if cache_miss:
         _TEAM_CACHE[session_id] = build_team(project)
         _CANCEL_TOKENS[session_id] = CT()
 
-    return _TEAM_CACHE[session_id], _CANCEL_TOKENS[session_id]
+    return _TEAM_CACHE[session_id], _CANCEL_TOKENS[session_id], cache_miss
+
+
+async def save_team_state(team: Any) -> dict:
+    """Return serialized AutoGen team state for persistence."""
+    return await team.save_state()
+
+
+async def load_team_state(team: Any, state: dict) -> None:
+    """Load previously serialized AutoGen team state into a team instance."""
+    await team.load_state(state)
 
 
 def reset_cancel_token(session_id: str) -> "CancellationToken":

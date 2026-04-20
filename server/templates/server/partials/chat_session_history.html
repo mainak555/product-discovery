@@ -80,6 +80,35 @@
 {% endif %}
 {% endif %}
 
+{% if session.has_agent_state %}
+{% if session.status == "completed" or session.status == "stopped" %}
+  <div class="chat-restart-panel" data-session-id="{{ session.session_id }}">
+    <div class="chat-restart-panel__title">Restart from saved agent state</div>
+    <p class="chat-restart-panel__hint">
+      Continue this conversation from the last checkpoint. You can continue directly or add extra context first.
+    </p>
+    <div class="chat-restart-panel__actions">
+      <button class="btn btn--success chat-restart-btn chat-restart-btn--continue" data-mode="continue_only">
+        Continue from last
+      </button>
+      <button class="btn btn--secondary chat-restart-btn chat-restart-btn--with-context" data-mode="continue_with_context">
+        Add context and continue
+      </button>
+    </div>
+    <div class="chat-restart-panel__context" hidden>
+      <textarea class="input input--textarea chat-restart-panel__textarea"
+                rows="3"
+                placeholder="Add context or instruction before continuing..."></textarea>
+      <div class="chat-restart-panel__context-actions">
+        <button class="btn btn--primary chat-restart-btn chat-restart-btn--submit" data-mode="continue_with_context">
+          Continue with context
+        </button>
+      </div>
+    </div>
+  </div>
+{% endif %}
+{% endif %}
+
 {% else %}
 {% if project %}
 

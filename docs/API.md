@@ -15,6 +15,15 @@ All routes are under the `server` app namespace.
 | `POST` | `/projects/<project_id>/` | `project_detail` | Update a project |
 | `POST` | `/projects/<project_id>/delete/` | `project_delete` | Delete project (blocked if chats exist) |
 | `POST` | `/projects/<project_id>/clone/` | `project_clone` | Clone project as `<name> - Copy` |
+| `GET` | `/chat/sessions/` | `chat_session_list` | List chat sessions for a project (HTMX partial) |
+| `POST` | `/chat/sessions/create/` | `chat_session_create` | Create a chat session |
+| `POST` | `/chat/sessions/<session_id>/run/` | `chat_session_run` | Start or continue a run (SSE stream) |
+| `POST` | `/chat/sessions/<session_id>/restart/` | `chat_session_restart` | Restart from persisted AutoGen team state |
+| `POST` | `/chat/sessions/<session_id>/respond/` | `chat_session_respond` | Human gate decision (approve/feedback/stop) |
+| `POST` | `/chat/sessions/<session_id>/stop/` | `chat_session_stop` | Stop an in-progress run |
+| `GET` | `/chat/sessions/<session_id>/` | `chat_session_detail` | Load chat history panel for one session |
+| `POST` | `/chat/sessions/<session_id>/delete/` | `chat_session_delete` | Delete a chat session |
+| `POST` | `/chat/sessions/<session_id>/update/` | `chat_session_update` | Update chat session description |
 | `GET` | `/trello/<session_id>/token-status/` | `trello_token_status` | Check token validity |
 | `GET` | `/trello/<session_id>/workspaces/` | `trello_workspaces` | List Trello workspaces |
 | `GET` | `/trello/<session_id>/boards/` | `trello_boards` | List boards (opt. `?workspace=`) |
@@ -116,3 +125,34 @@ Model runtime notes:
   }
 }
 ```
+
+## Chat Session State Persistence
+
+`chat_sessions` documents may include persisted AutoGen state:
+
+```json
+{
+  "project_id": "<project_id>",
+  "description": "...",
+  "discussion": [],
+  "status": "idle | running | awaiting_input | completed | stopped",
+  "current_round": 0,
+  "agent_state": {
+    "source": "autogen_team_state",
+    "version": "1.0.0",
+    "saved_at": "2026-04-20T11:22:33.000000+00:00",
+    "state": { "type": "TeamState", "...": "AutoGen payload" }
+  }
+}
+```
+
+Restart endpoint contract:
+
+- `POST /chat/sessions/<session_id>/restart/`
+- Body fields:
+  - `mode`: `continue_only` or `continue_with_context`
+  - `text`: required only for `continue_with_context`
+- Behavior:
+  - Requires a persisted `agent_state`
+  - Session must be `completed` or `stopped`
+  - If `load_state()` fails due to schema/version drift, restart stops with an explicit version mismatch error

@@ -6,6 +6,7 @@ and translate results into HTTP/HTMX responses.
 """
 
 import hmac
+import json
 import os
 from datetime import datetime, timezone
 
@@ -25,6 +26,9 @@ from .schemas import validate_project, validate_chat_session
 
 class ProjectDeletionBlocked(ValueError):
     """Raised when a project cannot be deleted due to dependent records."""
+
+
+MAX_AGENT_STATE_BYTES = 900_000
 
 
 def _coerce_temperature(value):
@@ -392,6 +396,14 @@ def normalize_chat_session(doc):
     created_at = doc.get("created_at", "")
     if hasattr(created_at, "strftime"):
         created_at = created_at.strftime("%Y-%m-%d %H:%M")
+    agent_state = doc.get("agent_state")
+    state_meta = {}
+    if isinstance(agent_state, dict):
+        state_meta = {
+            "source": agent_state.get("source", ""),
+            "version": agent_state.get("version", ""),
+            "saved_at": agent_state.get("saved_at", ""),
+        }
     return {
         "session_id": str(doc["_id"]),
         "project_id": doc.get("project_id", ""),
@@ -400,6 +412,8 @@ def normalize_chat_session(doc):
         "discussion": doc.get("discussion", []),
         "status": doc.get("status", "idle"),
         "current_round": doc.get("current_round", 0),
+        "has_agent_state": isinstance(agent_state, dict) and isinstance(agent_state.get("state"), dict),
+        "agent_state_meta": state_meta,
     }
 
 
@@ -440,6 +454,60 @@ def append_messages(session_id, messages):
         return
     col = get_collection(CHAT_SESSIONS_COLLECTION)
     col.update_one({"_id": oid}, {"$push": {"discussion": {"$each": messages}}})
+
+
+def save_agent_state(session_id, state):
+    """Persist serialized AutoGen TeamState for a chat session."""
+    if not isinstance(state, dict):
+        raise ValueError("'state' must be a JSON object.")
+
+    try:
+        oid = ObjectId(session_id)
+    except (InvalidId, TypeError):
+        raise ValueError(f"Invalid session ID '{session_id}'.")
+
+    payload = {
+        "source": "autogen_team_state",
+        "version": str(state.get("version") or ""),
+        "saved_at": datetime.now(timezone.utc).isoformat(),
+        "state": state,
+    }
+    payload_size = len(json.dumps(payload, ensure_ascii=True).encode("utf-8"))
+    if payload_size > MAX_AGENT_STATE_BYTES:
+        raise ValueError("Agent state is too large to persist.")
+
+    col = get_collection(CHAT_SESSIONS_COLLECTION)
+    result = col.update_one({"_id": oid}, {"$set": {"agent_state": payload}})
+    if result.matched_count == 0:
+        raise ValueError("Chat session not found.")
+
+
+def get_agent_state(session_id):
+    """Return persisted AutoGen TeamState dict for a session, or None."""
+    try:
+        oid = ObjectId(session_id)
+    except (InvalidId, TypeError):
+        return None
+
+    col = get_collection(CHAT_SESSIONS_COLLECTION)
+    raw = col.find_one({"_id": oid}, {"agent_state": 1})
+    if not raw:
+        return None
+    agent_state = raw.get("agent_state")
+    if not isinstance(agent_state, dict):
+        return None
+    state = agent_state.get("state")
+    return state if isinstance(state, dict) else None
+
+
+def clear_agent_state(session_id):
+    """Remove persisted AutoGen TeamState for a session."""
+    try:
+        oid = ObjectId(session_id)
+    except (InvalidId, TypeError):
+        return
+    col = get_collection(CHAT_SESSIONS_COLLECTION)
+    col.update_one({"_id": oid}, {"$unset": {"agent_state": ""}})
 
 
 def list_chat_sessions(project_id):

@@ -150,6 +150,28 @@ document.addEventListener("DOMContentLoaded", function () {
     openEditModal(sessionId, description);
   });
 
+  document.body.addEventListener("click", function (e) {
+    var item = e.target.closest(".chat-session-item");
+    if (!item) return;
+
+    if (e.target.closest(".chat-session-item__edit") || e.target.closest(".chat-session-item__delete")) {
+      return;
+    }
+
+    var nameEl = item.querySelector(".chat-session-item__name");
+    if (!nameEl) return;
+
+    if (e.target.closest(".chat-session-item__name")) {
+      return;
+    }
+
+    if (typeof htmx !== "undefined") {
+      htmx.trigger(nameEl, "click");
+    } else {
+      nameEl.click();
+    }
+  });
+
   document.body.addEventListener("htmx:beforeSwap", function (e) {
     if (e.detail.target && e.detail.target.id === "edit-session-form-feedback") {
       if (e.detail.xhr.status === 400 || e.detail.xhr.status === 403) {
@@ -187,6 +209,12 @@ document.addEventListener("DOMContentLoaded", function () {
     if (chatInput) { chatInput.disabled = running; }
     if (chatSendBtn) { chatSendBtn.hidden = running; }
     if (chatStopBtn) { chatStopBtn.hidden = !running; }
+    document.querySelectorAll(".chat-restart-btn").forEach(function (btn) {
+      btn.disabled = running;
+    });
+    document.querySelectorAll(".chat-restart-panel__textarea").forEach(function (ta) {
+      ta.disabled = running;
+    });
   }
 
   function appendBubble(html) {
@@ -222,6 +250,65 @@ document.addEventListener("DOMContentLoaded", function () {
       '<div class="chat-status-badge chat-status-badge--' + type + '">' + label + '</div>'
     );
     chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function appendRestartPanel() {
+    var sessionId = activeSessionIdInput ? activeSessionIdInput.value : "";
+    if (!sessionId || document.querySelector(".chat-restart-panel")) return;
+    chatMessages.insertAdjacentHTML(
+      "beforeend",
+      '<div class="chat-restart-panel" data-session-id="' + sessionId + '">'
+      + '<div class="chat-restart-panel__title">Restart from saved agent state</div>'
+      + '<p class="chat-restart-panel__hint">Continue this conversation from the last checkpoint. You can continue directly or add extra context first.</p>'
+      + '<div class="chat-restart-panel__actions">'
+      + '<button class="btn btn--success chat-restart-btn chat-restart-btn--continue" data-mode="continue_only">Continue from last</button>'
+      + '<button class="btn btn--secondary chat-restart-btn chat-restart-btn--with-context" data-mode="continue_with_context">Add context and continue</button>'
+      + '</div>'
+      + '<div class="chat-restart-panel__context" hidden>'
+      + '<textarea class="input input--textarea chat-restart-panel__textarea" rows="3" placeholder="Add context or instruction before continuing..."></textarea>'
+      + '<div class="chat-restart-panel__context-actions">'
+      + '<button class="btn btn--primary chat-restart-btn chat-restart-btn--submit" data-mode="continue_with_context">Continue with context</button>'
+      + '</div>'
+      + '</div>'
+      + '</div>'
+    );
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function restartSession(panel, mode, text) {
+    var sessionId = panel.dataset.sessionId
+      || (activeSessionIdInput ? activeSessionIdInput.value.trim() : "");
+    var secretKey = getSecretKey();
+    if (!sessionId || !secretKey) return;
+
+    var body = new URLSearchParams();
+    body.append("mode", mode || "continue_only");
+    if (text) body.append("text", text);
+
+    setRunningState(true);
+    fetch("/chat/sessions/" + sessionId + "/restart/", {
+      method: "POST",
+      headers: {
+        "X-App-Secret-Key": secretKey,
+        "X-CSRFToken": csrfToken,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
+    }).then(function (r) {
+      return r.json().then(function (data) {
+        if (!r.ok) throw new Error(data.error || "Restart failed");
+        return data;
+      });
+    }).then(function (data) {
+      panel.remove();
+      if ((mode || "") === "continue_with_context" && text) {
+        appendHumanBubble(text);
+      }
+      startRun(data.task || "");
+    }).catch(function (err) {
+      setRunningState(false);
+      appendBubble('<div class="chat-bubble chat-bubble--error">Error: ' + err.message + '</div>');
+    });
   }
 
   function appendGatePanel(data) {
@@ -267,6 +354,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
     var secretKey = getSecretKey();
     if (!secretKey) { alert("Enter the Secret Key first."); return; }
+
+    chatMessages.querySelectorAll(".chat-status-badge, .chat-restart-panel").forEach(function (el) {
+      el.remove();
+    });
 
     setRunningState(true);
 
@@ -370,12 +461,14 @@ document.addEventListener("DOMContentLoaded", function () {
     } else if (eventName === "done") {
       setRunningState(false);
       appendStatusBadge("completed");
+      appendRestartPanel();
       if (data.export && data.export.enabled) {
         appendBubble(buildExportButtons(data.export));
       }
     } else if (eventName === "stopped") {
       setRunningState(false);
       appendStatusBadge("stopped");
+      appendRestartPanel();
     } else if (eventName === "error") {
       setRunningState(false);
       appendBubble('<div class="chat-bubble chat-bubble--error">' + (data.message || "Unknown error") + '</div>');
@@ -530,10 +623,42 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   document.body.addEventListener("click", function (e) {
+    var panel = e.target.closest(".chat-restart-panel");
+    if (!panel) return;
+
+    var withContextBtn = e.target.closest(".chat-restart-btn--with-context");
+    if (withContextBtn) {
+      var ctx = panel.querySelector(".chat-restart-panel__context");
+      if (ctx) {
+        ctx.hidden = false;
+        var ta = ctx.querySelector(".chat-restart-panel__textarea");
+        if (ta) ta.focus();
+      }
+      return;
+    }
+
+    var continueBtn = e.target.closest(".chat-restart-btn--continue");
+    if (continueBtn) {
+      restartSession(panel, "continue_only", "");
+      return;
+    }
+
+    var submitBtn = e.target.closest(".chat-restart-btn--submit");
+    if (submitBtn) {
+      var ta = panel.querySelector(".chat-restart-panel__textarea");
+      var text = ta ? ta.value.trim() : "";
+      if (!text) {
+        if (ta) ta.focus();
+        return;
+      }
+      restartSession(panel, "continue_with_context", text);
+    }
+  });
+
+  document.body.addEventListener("click", function (e) {
     var item = e.target.closest(".chat-project-item");
     if (!item) return;
 
-    e.preventDefault();
     var projectName = item.dataset.project;
     var projectId = item.dataset.projectId;
     if (!projectName) return;

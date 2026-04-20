@@ -69,6 +69,18 @@ config.html                        ← Full HTML document, loaded once
 `trello.js` handles (home chat page only):
 - Trello export modal for extracting and pushing chat output to Trello.
 
+`home.js` also handles (home chat page only):
+- Restart controls for sessions with persisted agent state.
+- Two restart modes: continue from last state, or add context and continue.
+
+## Chat Restart Discoverability
+
+- Chat session list rows (`chat_session_list.html`) show a compact `Restartable` badge when `session.has_agent_state` is true.
+- The chat history panel (`chat_session_history.html`) shows a restart panel for `completed`/`stopped` sessions with saved state.
+- Restart behavior:
+  - `Continue from last`: resumes with no additional user instruction.
+  - `Add context and continue`: appends user-provided context before resume.
+
 ## Configuration Surface
 
 - **Assistant agents**: each card stores `name`, `model`, `system_prompt`, and `temperature`. The project `objective` is automatically appended to each agent's resolved system prompt at runtime.

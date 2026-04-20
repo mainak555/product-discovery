@@ -142,6 +142,11 @@ The default example is stored in `server/model_catalog.SELECTOR_AGENT_PROMPT` an
 
 Teams are kept alive in a process-local dict (`_TEAM_CACHE`) keyed by `session_id`. This preserves AutoGen's internal conversation history between rounds in human-gated runs.
 
+The runtime also persists native AutoGen team state to `chat_sessions.agent_state` using:
+
+- `await team.save_state()` at run checkpoints
+- `await team.load_state(saved_state)` on cache-miss restore
+
 ```
 session_id → AutoGen team instance
 session_id → CancellationToken
@@ -160,7 +165,8 @@ session_id → CancellationToken
 
 - **Cache miss**: Fresh team is built from `project` config via `build_team()`.
 - **Cache hit**: Existing team is reused with its accumulated history intact.
-- **Server restart**: Cache is lost. A session stuck in `awaiting_input` will rebuild the team on the next `run_stream()` call; the prior discussion from MongoDB is passed as the initial task so agents recover context.
+- **Server restart**: Cache is lost. If persisted `agent_state` exists, the team is rebuilt and `load_state()` restores it.
+- **State mismatch**: If `load_state()` fails due to schema/version drift, restart is rejected with an explicit "state version mismatch" error (no fallback rebuild path).
 
 ---
 

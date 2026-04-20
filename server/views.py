@@ -444,6 +444,11 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+def _json_error(message: str, status: int) -> HttpResponse:
+    """Return a standard JSON error response."""
+    return HttpResponse(json.dumps({"error": message}), status=status, content_type="application/json")
+
+
 # ---------------------------------------------------------------------------
 # Agent execution — SSE streaming run
 # ---------------------------------------------------------------------------
@@ -461,44 +466,52 @@ async def chat_session_run(request, session_id):
       task  — the user message / feedback text (empty string = resume approve)
     """
     if not _has_valid_secret(request):
-        return HttpResponse(json.dumps({"error": "Unauthorized"}), status=403,
-                            content_type="application/json")
+        return _json_error("Unauthorized", 403)
 
     session = await asyncio.to_thread(services.get_chat_session, session_id)
     if session is None:
-        return HttpResponse(json.dumps({"error": "Session not found"}), status=404,
-                            content_type="application/json")
+        return _json_error("Session not found", 404)
 
     valid_states = ("idle", "awaiting_input")
     if session["status"] not in valid_states:
-        return HttpResponse(
-            json.dumps({"error": f"Session is currently '{session['status']}'"}),
-            status=409, content_type="application/json",
-        )
+        return _json_error(f"Session is currently '{session['status']}'", 409)
 
     project = await asyncio.to_thread(services.get_project, session["project_id"])
     if project is None:
-        return HttpResponse(json.dumps({"error": "Project not found"}), status=404,
-                            content_type="application/json")
+        return _json_error("Project not found", 404)
 
     task = request.POST.get("task", "").strip()
 
     # First run must have a task; resume (approve) may send empty string
     is_first_run = session["status"] == "idle" and not session.get("discussion")
     if is_first_run and not task:
-        return HttpResponse(
-            json.dumps({"error": "'task' is required to start a conversation."}),
-            status=400, content_type="application/json",
-        )
+        return _json_error("'task' is required to start a conversation.", 400)
 
     await asyncio.to_thread(services.set_session_status, session_id, "running")
 
     async def event_stream():
         from autogen_agentchat.base import TaskResult
         from autogen_agentchat.messages import TextMessage
-        from agents.runtime import get_or_build_team, reset_cancel_token, evict_team
+        from agents.runtime import (
+            evict_team,
+            get_or_build_team,
+            load_team_state,
+            reset_cancel_token,
+            save_team_state,
+        )
 
-        team, _ = get_or_build_team(session_id, project)
+        team, _, cache_miss = get_or_build_team(session_id, project)
+        if cache_miss:
+            saved_state = await asyncio.to_thread(services.get_agent_state, session_id)
+            if saved_state:
+                try:
+                    await load_team_state(team, saved_state)
+                except Exception:
+                    evict_team(session_id)
+                    await asyncio.to_thread(services.set_session_status, session_id, "stopped")
+                    yield _sse("error", {"message": "Unable to restart: state version mismatch."})
+                    return
+
         # Issue a fresh cancellation token for this run
         cancel_token = reset_cancel_token(session_id)
 
@@ -527,6 +540,10 @@ async def chat_session_run(request, session_id):
 
         pending_messages = []
 
+        async def checkpoint_state() -> None:
+            state = await save_team_state(team)
+            await asyncio.to_thread(services.save_agent_state, session_id, state)
+
         # Persist the human's message (initial task or gate feedback) to the discussion.
         if task:
             human_name = project.get("human_gate", {}).get("name") or "You"
@@ -547,6 +564,8 @@ async def chat_session_run(request, session_id):
                     if pending_messages:
                         await asyncio.to_thread(services.append_messages, session_id, pending_messages)
                         pending_messages = []
+
+                    await checkpoint_state()
 
                     # Re-fetch to get current_round after potential $inc
                     updated = await asyncio.to_thread(services.get_chat_session, session_id)
@@ -589,6 +608,11 @@ async def chat_session_run(request, session_id):
         except asyncio.CancelledError:
             if pending_messages:
                 await asyncio.to_thread(services.append_messages, session_id, pending_messages)
+            try:
+                await checkpoint_state()
+            except Exception:
+                # Stop should still succeed even if persistence fails here.
+                pass
             await asyncio.to_thread(services.set_session_status, session_id, "stopped")
             evict_team(session_id)
             yield _sse("stopped", {"status": "stopped"})
@@ -632,19 +656,14 @@ def chat_session_respond(request, session_id):
       text   — feedback text (only for action=feedback)
     """
     if not _has_valid_secret(request):
-        return HttpResponse(json.dumps({"error": "Unauthorized"}), status=403,
-                            content_type="application/json")
+        return _json_error("Unauthorized", 403)
 
     session = services.get_chat_session(session_id)
     if session is None:
-        return HttpResponse(json.dumps({"error": "Session not found"}), status=404,
-                            content_type="application/json")
+        return _json_error("Session not found", 404)
 
     if session["status"] != "awaiting_input":
-        return HttpResponse(
-            json.dumps({"error": f"Session is not awaiting input (status: {session['status']})"}),
-            status=409, content_type="application/json",
-        )
+        return _json_error(f"Session is not awaiting input (status: {session['status']})", 409)
 
     action = request.POST.get("action", "").strip()
     text = request.POST.get("text", "").strip()
@@ -667,6 +686,44 @@ def chat_session_respond(request, session_id):
                         content_type="application/json")
 
 
+@csrf_exempt
+@require_POST
+def chat_session_restart(request, session_id):
+    """
+    POST /chat/sessions/<id>/restart/
+
+    Restart a completed/stopped session from persisted AutoGen state.
+
+    Body:
+      mode - "continue_only" | "continue_with_context"
+      text - optional instruction when mode=continue_with_context
+    """
+    if not _has_valid_secret(request):
+        return _json_error("Unauthorized", 403)
+
+    session = services.get_chat_session(session_id)
+    if session is None:
+        return _json_error("Session not found", 404)
+
+    if session.get("status") not in ("completed", "stopped"):
+        return _json_error(f"Session cannot be restarted from status '{session.get('status')}'.", 409)
+
+    if not session.get("has_agent_state"):
+        return _json_error("No persisted agent state is available for this session.", 409)
+
+    mode = (request.POST.get("mode", "continue_only") or "continue_only").strip()
+    text = (request.POST.get("text", "") or "").strip()
+    if mode not in ("continue_only", "continue_with_context"):
+        return _json_error("Invalid restart mode.", 400)
+
+    if mode == "continue_with_context" and not text:
+        return _json_error("'text' is required when mode is continue_with_context.", 400)
+
+    services.set_session_status(session_id, "idle")
+    task = text if mode == "continue_with_context" else ""
+    return HttpResponse(json.dumps({"status": "ok", "task": task, "mode": mode}), content_type="application/json")
+
+
 # ---------------------------------------------------------------------------
 # Mid-run abort
 # ---------------------------------------------------------------------------
@@ -681,8 +738,7 @@ def chat_session_stop(request, session_id):
     handles the CancelledError and emits a 'stopped' event.
     """
     if not _has_valid_secret(request):
-        return HttpResponse(json.dumps({"error": "Unauthorized"}), status=403,
-                            content_type="application/json")
+        return _json_error("Unauthorized", 403)
 
     from agents.runtime import cancel_team
     cancel_team(session_id)

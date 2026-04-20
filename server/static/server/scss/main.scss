@@ -779,6 +779,20 @@ select.input {
   margin-top: 1px;
 }
 
+.chat-session-item__badge {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #1d4ed8;
+  background: #dbeafe;
+  border: 1px solid #93c5fd;
+  border-radius: 999px;
+  padding: 1px 6px;
+  margin-top: 1px;
+}
+
 .chat-session-item__delete {
   flex-shrink: 0;
   background: none;
@@ -1352,6 +1366,54 @@ select.input {
   }
 
   &__actions {
+    display: flex;
+    gap: $space-sm;
+    flex-wrap: wrap;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Restart panel
+// ---------------------------------------------------------------------------
+.chat-restart-panel {
+  margin: $space-md;
+  padding: $space-md;
+  background: #eff6ff;
+  border: 1px solid #93c5fd;
+  border-left: 4px solid #3b82f6;
+  border-radius: $radius;
+
+  &__title {
+    font-size: $font-size-base;
+    font-weight: 700;
+    color: $color-text;
+    margin-bottom: $space-xs;
+  }
+
+  &__hint {
+    font-size: $font-size-sm;
+    color: $color-text-muted;
+    line-height: 1.5;
+    margin-bottom: $space-sm;
+  }
+
+  &__actions {
+    display: flex;
+    gap: $space-sm;
+    flex-wrap: wrap;
+  }
+
+  &__context {
+    margin-top: $space-sm;
+  }
+
+  &__textarea {
+    width: 100%;
+    resize: vertical;
+    margin-bottom: $space-sm;
+  }
+
+  &__context-actions {
     display: flex;
     gap: $space-sm;
     flex-wrap: wrap;
