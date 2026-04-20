@@ -742,8 +742,9 @@ select.input {
 // ---------------------------------------------------------------------------
 .chat-session-item {
   display: flex;
-  align-items: flex-start;
-  gap: $space-xs;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
   padding: $space-sm $space-md;
   border-left: 3px solid transparent;
   transition: background 0.15s, border-color 0.15s;
@@ -758,6 +759,26 @@ select.input {
     background: lighten($color-primary, 40%);
     border-left-color: $color-primary;
   }
+}
+
+.chat-session-item__row1 {
+  display: flex;
+  align-items: center;
+  gap: $space-xs;
+}
+
+.chat-session-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.chat-session-item__row2 {
+  display: flex;
+  align-items: center;
+  gap: $space-xs;
+  min-height: 1rem;
 }
 
 .chat-session-item__name {
@@ -776,7 +797,7 @@ select.input {
   color: $color-text-muted;
   white-space: nowrap;
   flex-shrink: 0;
-  margin-top: 1px;
+  margin-left: auto;
 }
 
 .chat-session-item__badge {
@@ -790,9 +811,9 @@ select.input {
   border: 1px solid #93c5fd;
   border-radius: 999px;
   padding: 1px 6px;
-  margin-top: 1px;
 }
 
+.chat-session-item__edit,
 .chat-session-item__delete {
   flex-shrink: 0;
   background: none;
@@ -804,10 +825,19 @@ select.input {
   padding: 0 3px;
   border-radius: $radius;
   transition: color 0.15s, background 0.15s;
+}
 
+.chat-session-item__delete {
   &:hover {
     color: $color-error;
     background: lighten($color-error, 38%);
+  }
+}
+
+.chat-session-item__edit {
+  &:hover {
+    color: $color-primary;
+    background: lighten($color-primary, 40%);
   }
 }
 

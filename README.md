@@ -28,7 +28,7 @@ pip install -r requirements.txt
 uvicorn config.asgi:application --reload --port 8000
 ```
 
-Open **http://localhost:8000** in your browser.
+Open **http://127.0.0.1:8000** in your browser.
 
 > `python manage.py runserver` also works but is single-threaded; SSE runs will block all other requests while an agent is executing.
 
