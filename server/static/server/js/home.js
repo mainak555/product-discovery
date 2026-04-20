@@ -76,6 +76,10 @@ document.addEventListener("DOMContentLoaded", function () {
       btn.hidden = !hasSecret;
     });
 
+    document.querySelectorAll(".chat-bubble__actions").forEach(function (actions) {
+      actions.hidden = !hasSecret;
+    });
+
     if (chatSendBtn) {
       chatSendBtn.disabled = !hasSecret;
       chatSendBtn.title = hasSecret ? "Send" : "Enter the Secret Key to send messages.";
@@ -87,6 +91,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (!hasSecret && editSessionModal && !editSessionModal.hidden) {
       closeEditModal();
+    }
+
+    if (!hasSecret) {
+      closeExportDropdowns();
     }
   }
 
@@ -324,16 +332,6 @@ document.addEventListener("DOMContentLoaded", function () {
         + '<button class="btn btn--danger human-gate-btn human-gate-btn--stop">Stop</button>'
         + '</div>';
 
-    var exportHtml = "";
-    if (data.export && data.export.enabled) {
-      var allOpen = (data.export.providers || []).some(function (p) {
-        return !p.export_agents || !p.export_agents.length;
-      });
-      if (allOpen) {
-        exportHtml = buildExportButtons(data.export);
-      }
-    }
-
     chatMessages.insertAdjacentHTML(
       "beforeend",
       '<div class="human-gate-panel" data-session-id="' + sessionId + '">'
@@ -342,7 +340,6 @@ document.addEventListener("DOMContentLoaded", function () {
       + ' - Round ' + data.round + ' of ' + data.max_rounds + ' complete. What would you like to do?'
       + '</div>'
       + modeHtml
-      + exportHtml
       + '</div>'
     );
     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -413,24 +410,60 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  function buildExportButtons(exportMeta) {
-    if (!exportMeta || !exportMeta.enabled || !exportMeta.providers) return "";
-    var html = '<div class="export-actions">';
-    exportMeta.providers.forEach(function (p) {
-      html += '<button type="button" class="btn btn--sm btn--secondary export-btn" data-provider="' + p.name + '">'
-        + 'Export to ' + p.label + '</button> ';
+  function getVisibleExportProviders(exportMeta, agentName) {
+    if (!exportMeta || !exportMeta.enabled) return [];
+
+    var lower = (agentName || "").toLowerCase();
+    return (exportMeta.providers || []).filter(function (provider) {
+      var allowlist = provider.export_agents || [];
+      if (!allowlist.length) return true;
+      return allowlist.some(function (name) {
+        return (name || "").toLowerCase() === lower;
+      });
     });
-    html += '</div>';
+  }
+
+  function buildExportDropdown(exportMeta, agentName, sessionId) {
+    var providers = getVisibleExportProviders(exportMeta, agentName);
+    if (!providers.length || !sessionId) return "";
+
+    var html = '<div class="chat-bubble__actions">'
+      + '<div class="export-dropdown" data-export-dropdown>'
+      + '<button type="button" class="btn btn--sm btn--secondary export-dropdown__toggle" aria-expanded="false">Export \u21D7</button>'
+      + '<div class="export-dropdown__menu" hidden>';
+
+    providers.forEach(function (provider) {
+      html += '<button type="button" class="export-dropdown__item" data-provider="' + provider.name + '" data-session-id="'
+        + sessionId + '">' + provider.label + '</button>';
+    });
+
+    html += '</div></div></div>';
     return html;
   }
 
-  function shouldShowExport(exportMeta, agentName) {
-    if (!exportMeta || !exportMeta.enabled) return false;
-    var lower = (agentName || "").toLowerCase();
-    return (exportMeta.providers || []).some(function (p) {
-      if (!p.export_agents || !p.export_agents.length) return true;
-      return p.export_agents.some(function (n) { return n.toLowerCase() === lower; });
+  function closeExportDropdowns() {
+    document.querySelectorAll("[data-export-dropdown]").forEach(function (dropdown) {
+      var menu = dropdown.querySelector(".export-dropdown__menu");
+      var toggle = dropdown.querySelector(".export-dropdown__toggle");
+      if (menu) menu.hidden = true;
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
     });
+  }
+
+  function openProviderExportModal(provider, sessionId, secretKey) {
+    var launchers = {
+      trello: window.TrelloExport,
+      jira: window.JiraExport,
+      pdf: window.PdfExport,
+      n8n: window.N8NExport,
+    };
+
+    var launcher = launchers[provider];
+    if (launcher && typeof launcher.openModal === "function") {
+      launcher.openModal(sessionId, secretKey, csrfToken);
+      return true;
+    }
+    return false;
   }
 
   function handleSSEEvent(eventName, data) {
@@ -440,9 +473,11 @@ document.addEventListener("DOMContentLoaded", function () {
       var contentHtml = (typeof marked !== "undefined")
         ? marked.parse(data.content || "")
         : "<p>" + (data.content || "").replace(/</g, "&lt;") + "</p>";
-      var exportHtml = shouldShowExport(data.export, data.agent_name)
-        ? buildExportButtons(data.export)
-        : "";
+      var exportHtml = buildExportDropdown(
+        data.export,
+        data.agent_name,
+        activeSessionIdInput ? activeSessionIdInput.value.trim() : ""
+      );
       appendBubble(
         '<div class="chat-bubble chat-bubble--ai">'
         + '<div class="chat-bubble__avatar">' + initial + '</div>'
@@ -462,9 +497,6 @@ document.addEventListener("DOMContentLoaded", function () {
       setRunningState(false);
       appendStatusBadge("completed");
       appendRestartPanel();
-      if (data.export && data.export.enabled) {
-        appendBubble(buildExportButtons(data.export));
-      }
     } else if (eventName === "stopped") {
       setRunningState(false);
       appendStatusBadge("stopped");
@@ -691,16 +723,42 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   document.body.addEventListener("click", function (e) {
-    var btn = e.target.closest(".export-btn");
-    if (!btn) return;
+    var toggle = e.target.closest(".export-dropdown__toggle");
+    if (toggle) {
+      var dropdown = toggle.closest("[data-export-dropdown]");
+      if (!dropdown) return;
+      var menu = dropdown.querySelector(".export-dropdown__menu");
+      var isOpening = !!(menu && menu.hidden);
+      closeExportDropdowns();
+      if (menu && isOpening) {
+        menu.hidden = false;
+        toggle.setAttribute("aria-expanded", "true");
+      }
+      return;
+    }
 
-    var sessionId = activeSessionIdInput ? activeSessionIdInput.value.trim() : "";
-    var secretKey = getSecretKey();
-    if (!sessionId || !secretKey) { alert("Enter the Secret Key first."); return; }
+    var item = e.target.closest(".export-dropdown__item");
+    if (item) {
+      var sessionId = item.dataset.sessionId || (activeSessionIdInput ? activeSessionIdInput.value.trim() : "");
+      var secretKey = getSecretKey();
+      if (!sessionId || !secretKey) { alert("Enter the Secret Key first."); return; }
 
-    var provider = btn.dataset.provider;
-    if (provider === "trello" && window.TrelloExport) {
-      window.TrelloExport.openModal(sessionId, secretKey, csrfToken);
+      var provider = item.dataset.provider;
+      if (!openProviderExportModal(provider, sessionId, secretKey)) {
+        alert(provider + " export is not yet implemented.");
+      }
+      closeExportDropdowns();
+      return;
+    }
+
+    if (!e.target.closest("[data-export-dropdown]")) {
+      closeExportDropdowns();
+    }
+  });
+
+  document.body.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      closeExportDropdowns();
     }
   });
 

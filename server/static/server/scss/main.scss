@@ -1299,6 +1299,12 @@ select.input {
       p { margin-bottom: $space-xs; }
       p:last-child { margin-bottom: 0; }
     }
+
+    .chat-bubble__actions {
+      display: flex;
+      justify-content: center;
+      margin-top: 2px;
+    }
   }
 
   &--error {
@@ -1479,11 +1485,64 @@ select.input {
 // ---------------------------------------------------------------------------
 // Export UI
 // ---------------------------------------------------------------------------
-.export-actions {
-  display: flex;
-  gap: $space-xs;
-  flex-wrap: wrap;
-  margin-top: $space-sm;
+.export-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.export-dropdown__toggle {
+  min-width: 5.85rem;
+  padding: 0.42rem 0.85rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  justify-content: center;
+  background: $color-info;
+  border-color: darken($color-info, 6%);
+  color: #fff;
+
+  &:hover,
+  &:focus-visible {
+    background: darken($color-info, 6%);
+    border-color: darken($color-info, 10%);
+    color: #fff;
+    outline: none;
+  }
+}
+
+.export-dropdown__menu {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: calc(100% + 4px);
+  min-width: 9rem;
+  background: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  z-index: 350;
+}
+
+.export-dropdown__item {
+  width: 100%;
+  text-align: left;
+  background: $color-surface;
+  color: $color-text;
+  border: 0;
+  border-bottom: 1px solid $color-border;
+  padding: 7px 10px;
+  font-size: $font-size-sm;
+  cursor: pointer;
+
+  &:last-child {
+    border-bottom: 0;
+  }
+
+  &:hover,
+  &:focus-visible {
+    background: $color-bg;
+    outline: none;
+  }
 }
 
 // Trello export modal overlay

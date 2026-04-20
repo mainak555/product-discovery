@@ -20,6 +20,15 @@ from django.views.decorators.http import require_GET, require_POST, require_http
 from . import services
 
 
+SUPPORTED_EXPORT_PROVIDERS = ("trello", "jira", "pdf", "n8n")
+EXPORT_PROVIDER_LABELS = {
+    "trello": "Trello",
+    "jira": "Jira",
+    "pdf": "PDF",
+    "n8n": "n8n",
+}
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -67,7 +76,7 @@ def _parse_form_agents(post_data):
     return agents
 
 
-def _build_project_data(post_data):
+def _build_project_data(post_data, existing_project=None):
     """Build a project data dict from POST form fields."""
     human_gate_enabled = post_data.get("human_gate[enabled]") == "on"
     integrations_enabled = post_data.get("integrations[enabled]") == "on"
@@ -96,6 +105,15 @@ def _build_project_data(post_data):
         },
     }
 
+    if isinstance(existing_project, dict):
+        existing_integrations = existing_project.get("integrations") or {}
+        for provider_name in SUPPORTED_EXPORT_PROVIDERS:
+            if provider_name == "trello":
+                continue
+            provider_cfg = existing_integrations.get(provider_name)
+            if isinstance(provider_cfg, dict):
+                integrations[provider_name] = dict(provider_cfg)
+
     return {
         "project_name": post_data.get("project_name", "").strip(),
         "objective": post_data.get("objective", "").strip(),
@@ -118,6 +136,73 @@ def _build_project_data(post_data):
         },
         "integrations": integrations,
     }
+
+
+def _normalize_export_agents(raw_agents):
+    """Return a clean list of export agent names."""
+    if isinstance(raw_agents, str):
+        raw_agents = [raw_agents] if raw_agents else []
+    if not isinstance(raw_agents, list):
+        return []
+    return [name.strip() for name in raw_agents if isinstance(name, str) and name.strip()]
+
+
+def _build_export_meta(project):
+    """Build provider metadata for export actions from project integrations."""
+    integrations = project.get("integrations") if isinstance(project, dict) else {}
+    if not isinstance(integrations, dict) or not integrations.get("enabled", False):
+        return None
+
+    providers = []
+    for provider_name in SUPPORTED_EXPORT_PROVIDERS:
+        provider_cfg = integrations.get(provider_name)
+        if not isinstance(provider_cfg, dict) or not provider_cfg.get("enabled", False):
+            continue
+
+        providers.append({
+            "name": provider_name,
+            "label": EXPORT_PROVIDER_LABELS.get(provider_name, provider_name.title()),
+            "export_agents": _normalize_export_agents(provider_cfg.get("export_agents")),
+        })
+
+    if not providers:
+        return None
+
+    return {
+        "enabled": True,
+        "providers": providers,
+    }
+
+
+def _filter_export_providers(export_meta, agent_name):
+    """Return export providers visible for a given agent name."""
+    if not export_meta or not export_meta.get("enabled"):
+        return []
+
+    target = (agent_name or "").strip().lower()
+    visible = []
+    for provider in export_meta.get("providers") or []:
+        allowlist = provider.get("export_agents") or []
+        if not allowlist:
+            visible.append(provider)
+            continue
+        if any((name or "").strip().lower() == target for name in allowlist):
+            visible.append(provider)
+    return visible
+
+
+def _build_history_messages(session, export_meta):
+    """Attach visible export providers to assistant messages for history rendering."""
+    history_messages = []
+    for msg in (session.get("discussion") if isinstance(session, dict) else []) or []:
+        row = dict(msg)
+        if row.get("role") != "user":
+            row["visible_export_providers"] = _filter_export_providers(
+                export_meta,
+                row.get("agent_name", ""),
+            )
+        history_messages.append(row)
+    return history_messages
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +364,8 @@ def project_detail(request, project_id):
             status=403,
         )
 
-    data = _build_project_data(request.POST)
+    existing_project = services.get_project(project_id)
+    data = _build_project_data(request.POST, existing_project=existing_project)
 
     try:
         project = services.update_project(project_id, data)
@@ -309,6 +395,7 @@ def chat_session_list(request):
     project_id = request.GET.get("project_id", "").strip()
     sessions = services.list_chat_sessions(project_id) if project_id else []
     project = services.get_project(project_id) if project_id else None
+    export_meta = _build_export_meta(project)
     list_html = render_to_string(
         "server/partials/chat_session_list.html",
         {"sessions": sessions, "project_id": project_id},
@@ -316,7 +403,7 @@ def chat_session_list(request):
     )
     context_html = render_to_string(
         "server/partials/chat_session_history.html",
-        {"project": project},
+        {"project": project, "history_export_meta": export_meta},
         request=request,
     )
     oob_html = f'<div id="chat-messages" hx-swap-oob="innerHTML">{context_html}</div>'
@@ -345,6 +432,8 @@ def chat_session_create(request):
     # content (the modal closes via HX-Trigger). OOB swaps update the sidebar
     # list and the main messages panel.
     sessions = services.list_chat_sessions(project_id)
+    project = services.get_project(project_id)
+    export_meta = _build_export_meta(project)
     list_html = render_to_string(
         "server/partials/chat_session_list.html",
         {"sessions": sessions, "project_id": project_id, "active_session_id": session["session_id"]},
@@ -352,7 +441,12 @@ def chat_session_create(request):
     )
     history_html = render_to_string(
         "server/partials/chat_session_history.html",
-        {"session": session},
+        {
+            "session": session,
+            "project": project,
+            "history_export_meta": export_meta,
+            "history_messages": _build_history_messages(session, export_meta),
+        },
         request=request,
     )
     oob_list = f'<div id="chat-history-list" hx-swap-oob="innerHTML">{list_html}</div>'
@@ -378,9 +472,12 @@ def chat_session_detail(request, session_id):
             status=404,
         )
     project = services.get_project(session["project_id"]) if session.get("project_id") else None
+    export_meta = _build_export_meta(project)
     return render(request, "server/partials/chat_session_history.html", {
         "session": session,
         "project": project,
+        "history_export_meta": export_meta,
+        "history_messages": _build_history_messages(session, export_meta),
     })
 
 
@@ -518,25 +615,8 @@ async def chat_session_run(request, session_id):
         has_gate = project.get("human_gate", {}).get("enabled", False)
         max_iter = project.get("team", {}).get("max_iterations", 5)
 
-        # Export integration metadata for client-side export buttons
-        integrations = project.get("integrations") or {}
-        export_enabled = integrations.get("enabled", False)
-        export_providers = []
-        if export_enabled:
-            trello_cfg = integrations.get("trello") or {}
-            if trello_cfg.get("enabled"):
-                export_providers.append({
-                    "name": "trello",
-                    "label": "Trello",
-                    "export_agents": trello_cfg.get("export_agents") or [],
-                    "default_board_name": trello_cfg.get("default_board_name", ""),
-                    "default_list_name": trello_cfg.get("default_list_name", ""),
-                })
-
-        export_meta = {
-            "enabled": export_enabled and len(export_providers) > 0,
-            "providers": export_providers,
-        } if export_enabled else None
+        # Export integration metadata for client-side export actions.
+        export_meta = _build_export_meta(project)
 
         pending_messages = []
 

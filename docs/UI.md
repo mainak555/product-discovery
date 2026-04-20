@@ -89,6 +89,7 @@ config.html                        ← Full HTML document, loaded once
   - `round_robin` — agents take turns in fixed order.
   - `selector` — a dedicated model client routes between agents each turn. Requires `model`, `system_prompt` (supports `{roles}`, `{history}`, `{participants}`), `temperature` (default `0.0`), and `allow_repeated_speaker`. Selector fields are wrapped in an `.agent-card` container (edit) / `.agent-card--readonly` card (readonly) with header "Selector Agent" / "Selector", matching assistant agent cards.
 - **Integrations → Trello → Export Agents**: checkboxes (`name="integrations[trello][export_agents]"`) rendered inside `#integrations-trello-fields` as the first element (above App Name). Leaving all unchecked means every agent's messages show the export button. Synced dynamically by `syncExportAgentCheckboxes()` whenever agent names change.
+- **Home chat export controls**: per-agent output export dropdowns are rendered from `project.integrations.<provider>` where `enabled=true` and filtered by each provider's `export_agents` allowlist (`[]` = all agents). These controls are visible only when the Secret Key input has a value (edit/create mode behavior).
 - **Integrations → Trello → Token**: the token section (`#trello-token-section`) is **always visible** when Trello is enabled (both create and edit modes). The textbox is permanently `disabled readonly`. In create mode the Generate button is disabled and the hint reads "Save the Configuration first to generate the token". After the project is saved the Generate button becomes enabled (gated by `js-requires-secret`). Once a token is generated the textbox shows `••••••••` and the hint shows the generated datetime. On edit-mode reload a previously stored token displays identically. The cascade dropdowns (`#trello-cascade-section`) remain hidden until a valid token exists.
 - **Integrations → Trello → Extraction Prompt**: the extraction `system_prompt` used to parse discussions into Trello cards. Rendered as a bare `form-group` textarea in edit mode (no card wrapper). In readonly mode it appears as an `.agent-card__detail` row inside the Trello card.
 - **Model list**: loaded from root `agent_models.json` and always shown in ascending order.
@@ -127,6 +128,7 @@ All write operations require a valid `APP_SECRET_KEY`. The secret is entered onc
 | **Chat send button** | `home.html` — `#chat-send-btn` | JS `disabled` | Disabled + tooltip | Enabled |
 | **Chat input** | `home.html` — `#chat-input` | JS `disabled` + placeholder | Disabled with hint | Enabled |
 | **Delete (chat session)** | `chat_session_list.html` — `.chat-session-item__delete` | JS `hidden` | Hidden | Visible |
+| **Export dropdown (chat output card)** | `chat_session_history.html` + SSE-rendered bubbles — `.chat-bubble__actions` | JS `hidden` via `updateChatAuthState()` | Hidden | Visible |
 | **New-session modal** | `home.html` — `#new-session-modal` | JS closes if key removed | Auto-closed | Openable |
 
 All write-endpoint views (`project_create`, `project_delete`, `project_clone`, `project_detail POST`, `chat_session_create`, `chat_session_delete`) also enforce the secret on the server and return a 403 response if the header is missing or invalid.
@@ -140,6 +142,7 @@ Project delete safety:
 
 - **`project_config.js` / `updateSubmitState()`** — runs on page load, after HTMX swaps, and on secret-key input changes. Handles `type="submit"` buttons, `.js-requires-secret` buttons on `.config-form`, and `.sidebar__delete` visibility/disabled state.
 - **`home.js` / `updateChatAuthState()`** — runs on page load, after HTMX swaps, and on secret-key input changes. Handles home chat controls (`#chat-send-btn`, `#chat-input`, `.chat-session-item__delete`, `.chat-session-item__edit`, edit modal safety).
+- **`home.js` / `updateChatAuthState()`** — runs on page load, after HTMX swaps, and on secret-key input changes. Handles home chat controls (`#chat-send-btn`, `#chat-input`, `.chat-session-item__delete`, `.chat-session-item__edit`, `.chat-bubble__actions` export visibility, edit modal safety).
 
 ### Adding a New Secret-Gated Button
 

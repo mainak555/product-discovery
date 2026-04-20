@@ -98,7 +98,7 @@ All endpoints require `X-App-Secret-Key` header.
 
 ## Export Flow
 
-1. User clicks "Export to Trello" button on a chat message
+1. User enters Secret Key (export controls are hidden without it), then clicks "Export" and selects "Trello" on a chat message
 2. Modal opens → checks token status via session endpoint (resolves to project token)
 3. If no token → message directs user to configure token in project settings
 4. Cascade dropdowns load with defaults pre-selected from project config

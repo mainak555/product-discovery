@@ -60,6 +60,7 @@ def get_trello_export_prompt_hint():
 
 
 SECRET_MASK = "••••••••"
+SUPPORTED_EXPORT_PROVIDERS = ("trello", "jira", "pdf", "n8n")
 
 
 def _mask_secret(value):
@@ -77,6 +78,21 @@ def _normalize_export_agents(raw_trello, raw_integrations):
     if isinstance(raw_ea, str):
         return [raw_ea.strip()] if raw_ea.strip() else []
     return [n.strip() for n in raw_ea if isinstance(n, str) and n.strip()]
+
+
+def _normalize_provider_flags(raw_integrations, provider_name):
+    """Return enabled/export_agents fields for non-Trello providers."""
+    raw_provider = raw_integrations.get(provider_name) or {}
+    provider_enabled = bool(raw_provider.get("enabled", False))
+    provider = {"enabled": provider_enabled}
+    if provider_enabled:
+        raw_ea = raw_provider.get("export_agents")
+        if isinstance(raw_ea, str):
+            raw_ea = [raw_ea] if raw_ea.strip() else []
+        provider["export_agents"] = [
+            name.strip() for name in (raw_ea or []) if isinstance(name, str) and name.strip()
+        ]
+    return provider
 
 
 def normalize_project(project):
@@ -178,6 +194,11 @@ def normalize_project(project):
         "enabled": integrations_enabled,
         "trello": trello,
     }
+
+    for provider_name in SUPPORTED_EXPORT_PROVIDERS:
+        if provider_name == "trello":
+            continue
+        integrations[provider_name] = _normalize_provider_flags(raw_integrations, provider_name)
 
     return {
         "project_id": str(project["_id"]) if project.get("_id") else "",

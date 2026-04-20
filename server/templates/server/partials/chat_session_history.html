@@ -15,7 +15,7 @@
 
 {% if session.discussion %}
   <div class="chat-history" id="chat-history-msgs">
-    {% for msg in session.discussion %}
+    {% for msg in history_messages|default:session.discussion %}
       {% if msg.role == "user" %}
         <div class="chat-bubble chat-bubble--human">
           <div class="chat-bubble__meta">
@@ -33,6 +33,27 @@
               <span class="chat-bubble__time">{{ msg.timestamp }}</span>
             </div>
             <div class="chat-bubble__content">{{ msg.content|markdownify }}</div>
+            {% if msg.visible_export_providers %}
+              <div class="chat-bubble__actions">
+                <div class="export-dropdown" data-export-dropdown>
+                  <button type="button" class="btn btn--sm btn--secondary export-dropdown__toggle" aria-expanded="false">
+                    Export &#x21D7;
+                  </button>
+                  <div class="export-dropdown__menu" hidden>
+                    {% for provider in msg.visible_export_providers %}
+                      <button
+                        type="button"
+                        class="export-dropdown__item"
+                        data-provider="{{ provider.name }}"
+                        data-session-id="{{ session.session_id }}"
+                      >
+                        {{ provider.label }}
+                      </button>
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+            {% endif %}
           </div>
         </div>
       {% endif %}
