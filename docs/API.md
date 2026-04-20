@@ -6,14 +6,15 @@ All routes are under the `server` app namespace.
 
 | Method | Path | View | Description |
 |--------|------|------|-------------|
-| `GET` | `/` | `index` | Full SPA page (config.html) |
+| `GET` | `/` | `index` | Full chat page (home.html) |
 | `GET` | `/projects/` | `configurations_page` | Full configurations page (sidebar + create form preloaded) |
 | `GET` | `/projects/list/` | `project_list` | HTMX partial — sidebar project list |
 | `GET` | `/projects/new/` | `project_new` | HTMX partial — blank config form |
-| `GET` | `/projects/<name>/` | `project_detail` | HTMX partial — config form or readonly |
-| `POST` | `/projects/<name>/` | `project_detail` | Create or update a project |
-| `GET` | `/trello/<session_id>/auth-url/` | `trello_auth_url` | Return Trello authorization URL |
-| `POST` | `/trello/<session_id>/store-token/` | `trello_store_token` | Store session Trello token |
+| `POST` | `/projects/create/` | `project_create` | Create project from config form |
+| `GET` | `/projects/<project_id>/` | `project_detail` | HTMX partial — config form or readonly |
+| `POST` | `/projects/<project_id>/` | `project_detail` | Update a project |
+| `POST` | `/projects/<project_id>/delete/` | `project_delete` | Delete project (blocked if chats exist) |
+| `POST` | `/projects/<project_id>/clone/` | `project_clone` | Clone project as `<name> - Copy` |
 | `GET` | `/trello/<session_id>/token-status/` | `trello_token_status` | Check token validity |
 | `GET` | `/trello/<session_id>/workspaces/` | `trello_workspaces` | List Trello workspaces |
 | `GET` | `/trello/<session_id>/boards/` | `trello_boards` | List boards (opt. `?workspace=`) |
@@ -35,7 +36,7 @@ See [docs/trello_integration.md](trello_integration.md) for full Trello integrat
 
 ## Request/Response Details
 
-### `POST /projects/<name>/`
+### `POST /projects/<project_id>/`
 
 **Content-Type**: `application/x-www-form-urlencoded` (standard HTML form)
 
@@ -43,7 +44,7 @@ See [docs/trello_integration.md](trello_integration.md) for full Trello integrat
 - `X-App-Secret-Key` — must match `APP_SECRET_KEY`
 
 **Form fields**:
-- `project_name` — string (ignored on update; URL path is authoritative)
+- `project_name` — string
 - `objective` — string
 - `agents[0][name]` — string
 - `agents[0][model]` — selected model name from `agent_models.json`
@@ -62,6 +63,20 @@ See [docs/trello_integration.md](trello_integration.md) for full Trello integrat
 **Success response**: HTML partial (`config_form.html`) with `HX-Trigger: refreshSidebar`
 
 **Error response**: `<div class="alert alert-error">message</div>` with status 400 or 403
+
+### `POST /projects/<project_id>/delete/`
+
+Deletes a project when no dependent chat sessions exist.
+
+Delete policy:
+- If any chat sessions reference the project, deletion is blocked.
+- No cascade delete is performed.
+
+Responses:
+- `200`: project deleted successfully
+- `400`: deletion blocked because dependent chat sessions exist
+- `403`: unauthorized (missing/invalid `X-App-Secret-Key`)
+- `404`: project not found
 
 Model runtime notes:
 - Model provider metadata is sourced from `agent_models.json` in the root.

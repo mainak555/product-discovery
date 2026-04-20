@@ -202,6 +202,11 @@ def project_delete(request, project_id):
 
     try:
         services.delete_project(project_id)
+    except services.ProjectDeletionBlocked as e:
+        return HttpResponse(
+            f'<div class="alert alert-error">{e}</div>',
+            status=400,
+        )
     except ValueError as e:
         return HttpResponse(
             f'<div class="alert alert-error">{e}</div>',

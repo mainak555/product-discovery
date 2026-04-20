@@ -58,3 +58,6 @@ See [docs/agent_teams.md](docs/agent_teams.md) for:
 9. **Templates** use HTMX partials pattern: full page loads `config.html`, subsequent interactions swap partials into `#main-content` or `#sidebar-list`
 10. **SCSS** compiled by django-compressor + django-libsass
 11. **No test suite yet** — planned for a future phase
+12. **Project deletion safety**: never cascade delete chats when deleting a project. If any chat sessions exist for a project, deletion must be blocked with a clear error message.
+13. **Common layer remains common**: global/shared modules (for example `server/static/server/js/app.js`) may contain only cross-feature utilities and hooks.
+14. **Feature ownership is mandatory**: Home, Project Config, and Trello implementations must stay separated in HTMX templates, JS modules, views, and services. Avoid adding feature-specific logic to shared files.

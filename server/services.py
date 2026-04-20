@@ -23,6 +23,10 @@ from .model_catalog import (
 from .schemas import validate_project, validate_chat_session
 
 
+class ProjectDeletionBlocked(ValueError):
+    """Raised when a project cannot be deleted due to dependent records."""
+
+
 def _coerce_temperature(value):
     """Return a float temperature with a safe default for legacy documents."""
     try:
@@ -179,6 +183,7 @@ def normalize_project(project):
         "human_gate": human_gate,
         "team": team,
         "integrations": integrations,
+        "has_chat_sessions": False,
     }
 
 
@@ -191,7 +196,19 @@ def list_projects():
     ensure_indexes()
     col = get_collection("project_settings")
     cursor = col.find({}).sort("project_name", 1)
-    return [normalize_project(p) for p in cursor]
+    projects = [normalize_project(p) for p in cursor]
+    project_ids = [p["project_id"] for p in projects if p.get("project_id")]
+    if not project_ids:
+        return projects
+
+    sessions_col = get_collection(CHAT_SESSIONS_COLLECTION)
+    chat_project_ids = set(
+        sessions_col.distinct("project_id", {"project_id": {"$in": project_ids}})
+    )
+    for project in projects:
+        project["has_chat_sessions"] = project.get("project_id") in chat_project_ids
+
+    return projects
 
 
 def get_project(project_id):
@@ -203,7 +220,17 @@ def get_project(project_id):
         return None
     col = get_collection("project_settings")
     project = col.find_one({"_id": oid})
-    return normalize_project(project)
+    normalized = normalize_project(project)
+    if not normalized:
+        return None
+    normalized["has_chat_sessions"] = _project_has_chat_sessions(project_id)
+    return normalized
+
+
+def _project_has_chat_sessions(project_id):
+    """Return True when at least one chat session references project_id."""
+    col = get_collection(CHAT_SESSIONS_COLLECTION)
+    return col.find_one({"project_id": project_id}, {"_id": 1}) is not None
 
 
 def get_project_raw(project_id):
@@ -310,6 +337,11 @@ def delete_project(project_id):
         raise ValueError(f"Invalid project ID '{project_id}'.")
 
     ensure_indexes()
+    if _project_has_chat_sessions(project_id):
+        raise ProjectDeletionBlocked(
+            "Cannot delete project while chat sessions exist. Delete chat sessions first."
+        )
+
     col = get_collection("project_settings")
     result = col.delete_one({"_id": oid})
     if result.deleted_count == 0:

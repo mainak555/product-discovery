@@ -12,11 +12,20 @@
         <button class="sidebar__delete"
                 hidden
                 type="button"
+                data-delete-blocked="{% if project.has_chat_sessions %}true{% else %}false{% endif %}"
+                data-default-title="Delete {{ project.project_name }}"
+                data-blocked-title="Cannot delete {{ project.project_name }} while chat sessions exist. Delete chat sessions first."
+                {% if project.has_chat_sessions %}
+                title="Cannot delete {{ project.project_name }} while chat sessions exist."
+                {% else %}
                 title="Delete {{ project.project_name }}"
+                {% endif %}
+                {% if not project.has_chat_sessions %}
                 hx-post="{% url 'server:project_delete' project.project_id %}"
                 hx-confirm="Delete '{{ project.project_name }}'? This cannot be undone."
                 hx-target="closest li"
-                hx-swap="outerHTML">
+                hx-swap="outerHTML"
+                {% endif %}>
           &times;
         </button>
       </li>

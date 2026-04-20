@@ -50,13 +50,18 @@ product-discovery/
 
 ### `services.py` — Business Logic
 - `list_projects()` — returns all projects sorted by name.
-- `get_project(name)` — returns a single normalized project or `None`.
+- `get_project(project_id)` — returns a single normalized project by MongoDB ObjectId hex string or `None`.
 - `create_project(data)` — validates, inserts, handles duplicate name errors.
-- `update_project(name, data)` — validates, replaces existing document.
+- `update_project(project_id, data)` — validates, replaces existing document.
+- `delete_project(project_id)` — deletes only when no dependent chat sessions exist.
 - `normalize_project(data)` — adapts old documents to the new nested shape for display.
 - `get_available_models()` — returns the sorted model catalog used by the UI.
 - `verify_secret_key(key)` — constant-time comparison against `APP_SECRET_KEY`.
 - All functions work with plain dicts — no HTTP/request coupling.
+
+Deletion policy:
+- Never cascade delete chat sessions from project deletion.
+- If chat sessions exist for a project, project deletion is blocked with a clear error.
 
 ### `views.py` — HTTP/HTMX Controllers
 - Parses request data, calls service functions, renders HTMX partials.
@@ -93,7 +98,9 @@ See [docs/agent_factory.md](agent_factory.md) for the full `agent_models.json` s
 
 ## Frontend JS Boundaries
 
-- `server/static/server/js/app.js`: shared SPA helpers only (secret header injection, generic form state, agent-card dynamics, chat UI).
+- `server/static/server/js/app.js`: shared SPA helpers only (secret header injection, shared helper utilities, generic cross-page hooks).
+- `server/static/server/js/project_config.js`: project configuration feature behavior only (agent cards, form state sync, config-page secret gating).
+- `server/static/server/js/home.js`: home chat feature behavior only (chat runtime UI, SSE rendering, human gate interactions).
 - `server/static/server/js/trello_config.js`: Trello project-configuration behavior only (token generation, workspace/board/list cascade, create board/list modal).
 - `server/static/server/js/trello.js`: Trello export modal for chat sessions only.
 

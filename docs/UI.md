@@ -22,12 +22,13 @@ The app is a single-page application using HTMX for partial page updates.
 ## HTMX Interaction Flow
 
 1. **Page load**: `config.html` renders the full shell and server-renders the sidebar list.
-2. **Open project**: clicking a sidebar item or project dropdown entry sends `hx-get="/projects/<name>/"` and swaps `#main-content`.
+2. **Open project**: clicking a sidebar item or project dropdown entry sends `hx-get="/projects/<project_id>/"` and swaps `#main-content`.
 3. **Secret key handling**: `app.js` injects `X-App-Secret-Key` into every HTMX request when the header input has a value.
 4. **Readonly vs edit**: opening a project without a valid secret key returns `config_readonly.html`; opening it with a valid secret key returns `config_form.html`.
 5. **Click "Configurations"**: browser navigates to `/projects/`, and the page auto-loads a blank create form into `#main-content`.
-6. **Submit form**: `hx-post="/projects/<name>/"` swaps `#main-content` with the updated form. Response includes `HX-Trigger: refreshSidebar`, which causes sidebar re-fetch.
-7. **Click "Clear"**: clears all form fields visually and resets assistant cards to one empty card.
+6. **Submit form**: `hx-post="/projects/<project_id>/"` swaps `#main-content` with the updated form. Response includes `HX-Trigger: refreshSidebar`, which causes sidebar re-fetch.
+7. **Delete project**: `hx-post="/projects/<project_id>/delete/"` removes sidebar row on success; if chats exist, server returns an error and deletion is blocked.
+8. **Click "Clear"**: clears all form fields visually and resets assistant cards to one empty card.
 
 ## Template Hierarchy
 
@@ -49,14 +50,15 @@ config.html                        ← Full HTML document, loaded once
 
 ## Dynamic Agent Cards (JS)
 
-`app.js` handles:
-- **Add agent**: Clones `<template id="agent-card-template">`, replaces `__IDX__` with next index.
-- **Remove agent**: Removes card from DOM, re-indexes remaining cards' `name` attributes.
-- **Form URL**: For "create" mode, updates `hx-post` URL as user types the project name.
-- **Secret key header**: Adds `X-App-Secret-Key` to HTMX requests from the header input.
-- **Human gate toggle**: Shows or hides the single human gate section and enforces the max-iteration cap when disabled.
-- **Team type toggle**: Shows or hides the `#selector-fields` section when `team_type` changes.
-- **Toast dismiss**: Auto-fades success alerts after 4 seconds.
+`app.js` handles shared behavior only:
+- Secret key helper access and HTMX header injection.
+- Shared toast dismiss behavior after HTMX swaps.
+
+`project_config.js` handles (config page only):
+- Add/remove/reindex assistant agent cards.
+- Human gate and team type field visibility and iteration constraints.
+- Integrations section visibility and export-agent checkbox sync.
+- Config-page secret-gated button state and sidebar delete control visibility.
 
 `trello_config.js` handles (config page only):
 - Trello integration toggle field state in `#integrations-trello-fields`.
@@ -117,17 +119,22 @@ All write operations require a valid `APP_SECRET_KEY`. The secret is entered onc
 
 All write-endpoint views (`project_create`, `project_delete`, `project_clone`, `project_detail POST`, `chat_session_create`, `chat_session_delete`) also enforce the secret on the server and return a 403 response if the header is missing or invalid.
 
+Project delete safety:
+- Project delete is blocked when chat sessions exist for the project.
+- The UI can show a disabled delete control for such projects, but server-side validation is authoritative.
+- No cascade delete of chats is performed.
+
 ### JS Functions
 
-- **`updateSubmitState()`** — runs on page load, after every HTMX swap (`htmx:afterSwap`), and on every keystroke in `#global-secret-key`. Handles `type="submit"` buttons and `.js-requires-secret` buttons on `.config-form`, plus `.sidebar__delete` visibility.
-- **`updateChatAuthState()`** — same trigger points, but scoped to the home-page chat surface (`#new-chat-btn`, `#chat-send-btn`, `#chat-input`, `.chat-session-item__delete`, `#new-session-modal`).
+- **`project_config.js` / `updateSubmitState()`** — runs on page load, after HTMX swaps, and on secret-key input changes. Handles `type="submit"` buttons, `.js-requires-secret` buttons on `.config-form`, and `.sidebar__delete` visibility/disabled state.
+- **`home.js` / `updateChatAuthState()`** — runs on page load, after HTMX swaps, and on secret-key input changes. Handles home chat controls (`#chat-send-btn`, `#chat-input`, `.chat-session-item__delete`, `.chat-session-item__edit`, edit modal safety).
 
 ### Adding a New Secret-Gated Button
 
 To gate any new `type="button"` action button on the config form under the same rule:
 
 1. Add class `js-requires-secret` to the `<button>` element in the template.
-2. No JS changes required — `updateSubmitState()` already selects `.config-form .js-requires-secret`.
+2. No JS changes required — `project_config.js` already selects `.config-form .js-requires-secret`.
 3. Ensure the corresponding view checks `_has_valid_secret(request)` and returns 403 if missing.
 
 ### Read-Only Mode
