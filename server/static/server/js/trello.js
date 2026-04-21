@@ -200,6 +200,10 @@
   function _renderReferenceMarkdown(markdown) {
     var el = document.getElementById("trello-reference-markdown");
     if (!el) return;
+    if (window.MarkdownViewer && typeof window.MarkdownViewer.render === "function") {
+      el.innerHTML = window.MarkdownViewer.render(markdown || "");
+      return;
+    }
     el.innerHTML = _markdownToHtml(markdown || "");
   }
 

@@ -12,7 +12,7 @@ def markdownify(value):
         return ""
     html = _md.markdown(
         str(value),
-        extensions=["nl2br", "fenced_code"],
+        extensions=["nl2br", "fenced_code", "tables"],
         output_format="html",
     )
     return mark_safe(html)

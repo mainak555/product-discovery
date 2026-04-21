@@ -1271,9 +1271,29 @@ select.input {
       line-height: 1.55;
       word-break: break-word;
       text-align: left;
+      overflow-x: auto;
 
       p { margin-bottom: $space-xs; }
       p:last-child { margin-bottom: 0; }
+
+      table {
+        width: 100%;
+        min-width: 360px;
+        border-collapse: collapse;
+        margin: $space-xs 0;
+      }
+
+      th,
+      td {
+        border: 1px solid lighten($color-primary, 24%);
+        padding: $space-xs $space-sm;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: darken($color-primary, 6%);
+      }
     }
   }
 
@@ -1295,9 +1315,31 @@ select.input {
       line-height: 1.7;
       word-break: break-word;
       text-align: left;
+      overflow-x: auto;
 
       p { margin-bottom: $space-xs; }
       p:last-child { margin-bottom: 0; }
+
+      table {
+        width: 100%;
+        min-width: 360px;
+        border-collapse: collapse;
+        margin: $space-xs 0;
+      }
+
+      th,
+      td {
+        border: 1px solid $color-border;
+        padding: $space-xs $space-sm;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: $color-bg;
+        color: $color-text;
+        font-weight: 600;
+      }
     }
 
     .chat-bubble__actions {
@@ -1852,7 +1894,7 @@ select.input {
 .trello-reference__markdown {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: auto;
   line-height: 1.6;
   font-size: $font-size-sm;
   border: 1px solid $color-border;
@@ -1876,6 +1918,27 @@ select.input {
   ul {
     margin: 0 0 $space-sm;
     padding-left: 1.2rem;
+  }
+
+  table {
+    width: 100%;
+    min-width: 360px;
+    border-collapse: collapse;
+    margin: 0 0 $space-sm;
+  }
+
+  th,
+  td {
+    border: 1px solid $color-border;
+    padding: $space-xs $space-sm;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background: $color-bg;
+    color: $color-text;
+    font-weight: 600;
   }
 
   li {

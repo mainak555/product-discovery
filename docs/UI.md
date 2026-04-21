@@ -98,6 +98,8 @@ Canonical styling rules for new SCSS work live in [docs/scss_style_guide.md](scs
 `trello.js` handles (home chat page only):
 - Trello export modal for extracting and pushing chat output to Trello.
 
+Shared markdown rendering for Home and export reference panes must go through `server/static/server/js/markdown_viewer.js`.
+
 `home.js` also handles (home chat page only):
 - Restart controls for sessions with persisted agent state.
 - Two restart modes: continue from last state, or add context and continue.

@@ -24,6 +24,15 @@ document.addEventListener("DOMContentLoaded", function () {
     return input ? input.value.trim() : "";
   }
 
+  function renderMarkdown(text) {
+    if (window.MarkdownViewer && typeof window.MarkdownViewer.render === "function") {
+      return window.MarkdownViewer.render(text || "");
+    }
+    return (typeof marked !== "undefined")
+      ? marked.parse(text || "")
+      : "<p>" + String(text || "").replace(/</g, "&lt;") + "</p>";
+  }
+
   var agentPromptModal = document.getElementById("agent-prompt-modal");
   var agentModalTitle = document.getElementById("agent-modal-title");
   var agentModalBody = document.getElementById("agent-modal-body");
@@ -34,10 +43,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (!agentPromptModal) return;
     if (agentModalTitle) agentModalTitle.textContent = name + " - System Prompt";
     if (agentModalBody) {
-      agentModalBody.innerHTML =
-        (typeof marked !== "undefined")
-          ? marked.parse(systemPrompt)
-          : "<pre>" + systemPrompt.replace(/</g, "&lt;") + "</pre>";
+      agentModalBody.innerHTML = renderMarkdown(systemPrompt);
     }
     agentPromptModal.hidden = false;
   }
@@ -237,9 +243,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   function appendHumanBubble(text) {
     var ts = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    var contentHtml = (typeof marked !== "undefined")
-      ? marked.parse(text)
-      : "<p>" + text.replace(/</g, "&lt;") + "</p>";
+    var contentHtml = renderMarkdown(text);
     appendBubble(
       '<div class="chat-bubble chat-bubble--human">'
       + '<div class="chat-bubble__meta">'
@@ -467,9 +471,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (eventName === "message") {
       var ts = data.timestamp || "";
       var initial = (data.agent_name || "A").slice(0, 1).toUpperCase();
-      var contentHtml = (typeof marked !== "undefined")
-        ? marked.parse(data.content || "")
-        : "<p>" + (data.content || "").replace(/</g, "&lt;") + "</p>";
+      var contentHtml = renderMarkdown(data.content || "");
       var exportHtml = buildExportDropdown(
         data.export,
         data.agent_name,
@@ -631,7 +633,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!text) { ta && ta.focus(); return; }
       panel.remove();
       var fbTs = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      var fbHtml = (typeof marked !== "undefined") ? marked.parse(text) : "<p>" + text.replace(/</g, "&lt;") + "</p>";
+      var fbHtml = renderMarkdown(text);
       appendBubble(
         '<div class="chat-bubble chat-bubble--human">'
         + '<div class="chat-bubble__meta">'
