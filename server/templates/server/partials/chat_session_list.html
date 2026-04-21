@@ -5,24 +5,45 @@
 {% if sessions %}
   {% for session in sessions %}
     <li class="chat-session-item{% if session.session_id == active_session_id %} chat-session-item--active{% endif %}"
-        data-session-id="{{ session.session_id }}">
-      <span class="chat-session-item__name"
-            hx-get="{% url 'server:chat_session_detail' session.session_id %}"
-            hx-target="#chat-messages"
-            hx-swap="innerHTML">
-        {{ session.description|truncatechars:55 }}
-      </span>
-      <span class="chat-session-item__date">{{ session.created_at }}</span>
-      <button class="chat-session-item__delete"
-              hidden
-              type="button"
-              title="Delete session"
-              hx-post="{% url 'server:chat_session_delete' session.session_id %}"
-              hx-confirm="Delete this chat session? This cannot be undone."
-              hx-target="closest li"
-              hx-swap="outerHTML">
-        &times;
-      </button>
+        data-session-id="{{ session.session_id }}"
+        title="{{ session.description }}">
+      <div class="chat-session-item__row1">
+        <span class="chat-session-item__name"
+              hx-get="{% url 'server:chat_session_detail' session.session_id %}"
+              hx-target="#chat-messages"
+              hx-swap="innerHTML">
+          {{ session.description|truncatechars:55 }}
+        </span>
+        <div class="chat-session-item__actions">
+          <button class="chat-session-item__edit"
+                  hidden
+                  type="button"
+                  title="Edit session"
+                  data-session-id="{{ session.session_id }}"
+                  data-description="{{ session.description }}">
+            &#9998;
+          </button>
+          <button class="chat-session-item__delete"
+                  hidden
+                  type="button"
+                  title="Delete session"
+                  hx-post="{% url 'server:chat_session_delete' session.session_id %}"
+                  hx-confirm="Delete this chat session? This cannot be undone."
+                  hx-target="closest li"
+                  hx-swap="outerHTML">
+            &times;
+          </button>
+        </div>
+      </div>
+      <div class="chat-session-item__row2">
+        {% if session.has_agent_state %}
+          <span class="chat-session-item__badge"
+                title="This chat can resume from last saved state.">
+            Restartable
+          </span>
+        {% endif %}
+        <span class="chat-session-item__date">{{ session.created_at }}</span>
+      </div>
     </li>
   {% endfor %}
 {% else %}

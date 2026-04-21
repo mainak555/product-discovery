@@ -1,8 +1,8 @@
 {% comment %}
   Main panel — three states:
-    session  → conversation history
-    project  → visual project context setter
-    neither  → generic welcome
+    session  ? conversation history
+    project  ? visual project context setter
+    neither  ? generic welcome
 {% endcomment %}
 {% load md_extras %}
 
@@ -13,36 +13,131 @@
   <span class="chat-history-header__date">{{ session.created_at }}</span>
 </div>
 
-{% if session.discussion %}
-  <div class="chat-history">
-    {% for msg in session.discussion %}
-      <div class="chat-history-msg">
-        <div class="chat-history-msg__meta">
-          <span class="chat-history-msg__agent">{{ msg.agent_name|default:"Unknown" }}</span>
-          <span class="chat-history-msg__sep">|</span>
-          <span class="chat-history-msg__role">{{ msg.role }}</span>
-          <span class="chat-history-msg__sep">|</span>
-          <span class="chat-history-msg__time">{{ msg.timestamp }}</span>
+{% if session.discussions %}
+  <div class="chat-history" id="chat-history-msgs">
+    {% for msg in history_messages|default:session.discussions %}
+      {% if msg.role == "user" %}
+        <div class="chat-bubble chat-bubble--human">
+          <div class="chat-bubble__meta">
+            <span class="chat-bubble__name">You</span>
+            <span class="chat-bubble__time">{{ msg.timestamp }}</span>
+          </div>
+          <div class="chat-bubble__content">{{ msg.content|markdownify }}</div>
         </div>
-        <div class="chat-history-msg__content">{{ msg.content }}</div>
-      </div>
-      {% if not forloop.last %}<hr class="chat-history-msg__divider">{% endif %}
+      {% else %}
+        <div class="chat-bubble chat-bubble--ai">
+          <div class="chat-bubble__avatar">{{ msg.agent_name|slice:":1"|upper }}</div>
+          <div class="chat-bubble__body">
+            <div class="chat-bubble__meta">
+              <span class="chat-bubble__name">{{ msg.agent_name|default:"Agent" }}</span>
+              <span class="chat-bubble__time">{{ msg.timestamp }}</span>
+            </div>
+            <div class="chat-bubble__content">{{ msg.content|markdownify }}</div>
+            {% if msg.visible_export_providers %}
+              <div class="chat-bubble__actions">
+                <div class="export-dropdown" data-export-dropdown>
+                  <button type="button" class="btn btn--sm btn--secondary export-dropdown__toggle" aria-expanded="false">
+                    Export &#x21D7;
+                  </button>
+                  <div class="export-dropdown__menu" hidden>
+                    {% for provider in msg.visible_export_providers %}
+                      <button
+                        type="button"
+                        class="export-dropdown__item"
+                        data-provider="{{ provider.name }}"
+                        data-session-id="{{ session.session_id }}"
+                        data-discussion-id="{{ msg.id|default:'' }}"
+                      >
+                        {{ provider.label }}
+                      </button>
+                    {% endfor %}
+                  </div>
+                </div>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
     {% endfor %}
   </div>
 {% else %}
-  <div class="chat-welcome">
-    <div class="chat-welcome__icon">💬</div>
+  <div class="chat-welcome" id="chat-history-msgs">
+    <div class="chat-welcome__icon">&#x1F4AC;</div>
     <h2 class="chat-welcome__title">No messages yet</h2>
-    <p class="chat-welcome__subtitle">This session has no messages yet.</p>
+    <p class="chat-welcome__subtitle">Type your task below and press Send to start the agents.</p>
   </div>
 {% endif %}
 
-{% elif project %}
+{# ---- Status badges / gate panel rendered on page reload ---- #}
+{% if session.status == "completed" %}
+  <div class="chat-status-badge chat-status-badge--completed">&#x2705; Run completed</div>
+{% else %}
+{% if session.status == "stopped" %}
+  <div class="chat-status-badge chat-status-badge--stopped">&#x1F6D1; Run stopped</div>
+{% else %}
+{% if session.status == "awaiting_input" %}
+{% if project %}
+  <div class="human-gate-panel" data-session-id="{{ session.session_id }}">
+    <div class="human-gate-panel__prompt">
+      &#x1F464; <strong>{{ project.human_gate.name }}</strong> &mdash; Round {{ session.current_round }} of {{ project.team.max_iterations }} complete.
+      What would you like to do?
+    </div>
+    {% if project.human_gate.interaction_mode == "feedback" %}
+      <textarea class="input input--textarea human-gate-panel__textarea"
+                rows="3"
+                placeholder="Type your feedback for the agents…"></textarea>
+      <div class="human-gate-panel__actions">
+        <button class="btn btn--primary human-gate-btn human-gate-btn--feedback">&#x1F4E4; Send Feedback</button>
+        <button class="btn btn--danger human-gate-btn human-gate-btn--stop">&#x1F6D1; Stop</button>
+      </div>
+    {% else %}
+      <div class="human-gate-panel__actions">
+        <button class="btn btn--success human-gate-btn human-gate-btn--approve">&#x2705; Approve &amp; Continue</button>
+        <button class="btn btn--danger human-gate-btn human-gate-btn--stop">&#x1F6D1; Stop</button>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+
+{% if session.has_agent_state %}
+{% if session.status == "completed" or session.status == "stopped" %}
+  <div class="chat-restart-panel" data-session-id="{{ session.session_id }}">
+    <div class="chat-restart-panel__title">Restart from saved agent state</div>
+    <p class="chat-restart-panel__hint">
+      Continue this conversation from the last checkpoint. You can continue directly or add extra context first.
+    </p>
+    <div class="chat-restart-panel__actions">
+      <button class="btn btn--success chat-restart-btn chat-restart-btn--continue" data-mode="continue_only">
+        Continue from last
+      </button>
+      <button class="btn btn--secondary chat-restart-btn chat-restart-btn--with-context" data-mode="continue_with_context">
+        Add context and continue
+      </button>
+    </div>
+    <div class="chat-restart-panel__context" hidden>
+      <textarea class="input input--textarea chat-restart-panel__textarea"
+                rows="3"
+                placeholder="Add context or instruction before continuing..."></textarea>
+      <div class="chat-restart-panel__context-actions">
+        <button class="btn btn--primary chat-restart-btn chat-restart-btn--submit" data-mode="continue_with_context">
+          Continue with context
+        </button>
+      </div>
+    </div>
+  </div>
+{% endif %}
+{% endif %}
+
+{% else %}
+{% if project %}
 
 <div class="project-ctx">
 
   <div class="project-ctx__header">
-    <div class="project-ctx__icon">🎯</div>
+    <div class="project-ctx__icon">&#x1F3AF;</div>
     <div>
       <h2 class="project-ctx__name">{{ project.project_name }}</h2>
       <span class="project-ctx__tag">
@@ -95,7 +190,7 @@
   </div>
 
   <p class="project-ctx__hint">
-    Select a session from the list or press <strong>＋</strong> to start a new one.
+    Send a message below to start a new chat, or select a session from the list.
   </p>
 
 </div>
@@ -103,9 +198,10 @@
 {% else %}
 
 <div class="chat-welcome">
-  <div class="chat-welcome__icon">🤖</div>
+  <div class="chat-welcome__icon">&#x1F916;</div>
   <h2 class="chat-welcome__title">Product Discovery</h2>
   <p class="chat-welcome__subtitle">Select a project to get started.</p>
 </div>
 
+{% endif %}
 {% endif %}

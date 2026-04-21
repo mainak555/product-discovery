@@ -27,6 +27,29 @@ See [docs/UI.md](docs/UI.md) for:
 - Template hierarchy (base → partials)
 - CSS class naming conventions
 
+See [docs/scss_style_guide.md](docs/scss_style_guide.md) for:
+- Token-only SCSS rules and allowed derivations
+- Shared button/form/card/modal styling contracts
+- Responsive and export-modal aesthetic guardrails
+
+## Trello Integration
+
+See [docs/trello_integration.md](docs/trello_integration.md) for:
+- Architecture (trello_client → trello_service → trello_views + trello.js)
+- Project config schema and session token lifecycle
+- Auth flow, cascade dropdowns, and export pipeline
+- API endpoint reference
+
+## Agent Teams & Runtime
+
+See [docs/agent_teams.md](docs/agent_teams.md) for:
+- `RoundRobinGroupChat` vs `SelectorGroupChat` — when to use each
+- Selector prompt placeholders (`{roles}`, `{history}`, `{participants}`)
+- How project `objective` is injected into agent prompts and the selector prompt
+- Human gate state machine and approve/feedback resume flow
+- Runtime team cache lifecycle (`runtime.py`)
+- How to add a new team type end-to-end
+
 ## Key Rules
 
 1. **Business logic lives in `server/services.py`** — views are thin controllers
@@ -40,3 +63,12 @@ See [docs/UI.md](docs/UI.md) for:
 9. **Templates** use HTMX partials pattern: full page loads `config.html`, subsequent interactions swap partials into `#main-content` or `#sidebar-list`
 10. **SCSS** compiled by django-compressor + django-libsass
 11. **No test suite yet** — planned for a future phase
+12. **Project deletion safety**: never cascade delete chats when deleting a project. If any chat sessions exist for a project, deletion must be blocked with a clear error message.
+13. **Common layer remains common**: global/shared modules (for example `server/static/server/js/app.js`) may contain only cross-feature utilities and hooks.
+14. **Feature ownership is mandatory**: Home, Project Config, and Trello implementations must stay separated in HTMX templates, JS modules, views, and services. Avoid adding feature-specific logic to shared files.
+15. **Provider registry is required for exports**: shared modules must use `server/static/server/js/provider_registry.js` (`window.ProviderRegistry`) instead of hardcoding provider names or provider-specific window globals.
+16. **Reusable export modal pattern is mandatory**: all export providers (Trello, Jira, PDF, n8n, future) must keep the same baseline layout and lifecycle: left editor workspace, right raw markdown pane from `discussion.content`, and footer actions for Extract, Save, and Export.
+17. **Visual consistency is mandatory across pages**: destructive controls (delete buttons/icons), color-token usage, spacing rhythm, and modal typography must match shared patterns defined in SCSS and docs; provider-specific theming is additive, not divergent.
+18. **Extension skills are required for new providers**: follow `.agents/skills/export_popup_base/SKILL.md`, `.agents/skills/export_provider_adapter/SKILL.md`, `.agents/skills/ui_consistency_guardrails/SKILL.md`, `.agents/skills/scss_style_consistency/SKILL.md`, and `.agents/skills/markdown_viewer_reuse/SKILL.md` before implementing a new export provider.
+19. **SCSS consistency is mandatory**: all styling changes must follow `docs/scss_style_guide.md` and must not introduce hardcoded color values when shared tokens exist.
+20. **Markdown rendering must be reusable**: shared markdown rendering belongs in `server/static/server/js/markdown_viewer.js`; Home, Trello popup, and future providers must consume this common module instead of duplicating parsers.

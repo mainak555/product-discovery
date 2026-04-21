@@ -23,5 +23,5 @@ RUN python manage.py collectstatic --noinput
 
 EXPOSE 8000
 
-# Run with gunicorn in production
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]
+# Run with uvicorn (ASGI required for SSE streaming)
+CMD ["uvicorn", "config.asgi:application", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

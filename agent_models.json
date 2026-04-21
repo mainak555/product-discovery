@@ -1,8 +1,9 @@
 {
-  "claude-3-7-sonnet": {
+  "claude-3.7-sonnet": {
     "provider": "anthropic"
   },
-  "claude-sonnet-4-6": {
+  "claude-sonnet-4.6": {
+    "model": "claude-sonnet-4-6",
     "provider": "azure_anthropic",
     "endpoint": "https://ml-mkr7cej8-eastus2.services.ai.azure.com/anthropic/"
   },
@@ -20,6 +21,7 @@
   "gpt-5.4-mini": {
     "provider": "azure_openai",
     "endpoint": "https://cmazfoundry.cognitiveservices.azure.com/",
-    "api_version": "2024-12-01-preview"
+    "api_version": "2024-12-01-preview",
+    "model": "gpt-5.4-mini-2026-03-17"
   }
 }

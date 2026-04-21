@@ -17,6 +17,7 @@
       hx-swap="innerHTML">
 
   {% csrf_token %}
+  <input type="hidden" id="config-project-id" value="{{ project.project_id|default:'' }}">
 
   <h2 class="config-form__title">
     {% if mode == "create" %}New Configuration{% else %}Edit: {{ project.project_name }}{% endif %}
@@ -99,7 +100,7 @@
           <select id="human_gate_interaction_mode"
                   name="human_gate[interaction_mode]"
                   class="input">
-            <!--option value="approve_reject" {% if project.human_gate.interaction_mode|default:'approve_reject' == 'approve_reject' %}selected{% endif %}>Approve / Reject</option-->
+            <option value="approve_reject" {% if project.human_gate.interaction_mode|default:'approve_reject' == 'approve_reject' %}selected{% endif %}>Approve / Reject</option>
             <option value="feedback" {% if project.human_gate.interaction_mode == 'feedback' %}selected{% endif %}>Feedback</option>
           </select>
         </div>
@@ -117,6 +118,7 @@
         <label for="team_type">Team Type</label>
         <select id="team_type" name="team[type]" class="input">
           <option value="round_robin" {% if project.team.type|default:'round_robin' == 'round_robin' %}selected{% endif %}>Round Robin</option>
+          <option value="selector" {% if project.team.type == 'selector' %}selected{% endif %}>Selector</option>
         </select>
       </div>
 
@@ -131,9 +133,257 @@
                max="100">
       </div>
     </div>
+
+    <!-- Selector-specific fields — shown only when team type = selector -->
+    <div id="selector-fields" {% if project.team.type != 'selector' %}hidden{% endif %}>
+      <div class="agent-card">
+        <div class="agent-card__header">
+          <span class="agent-card__number">Selector Agent</span>
+        </div>
+
+        <div class="form-group">
+          <label for="team-model">Selector Model</label>
+          <select id="team-model" name="team[model]" class="input">
+            <option value="" disabled>— choose a model —</option>
+            {% for m in model_names %}
+              <option value="{{ m }}" {% if project.team.model == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+          <small class="form-hint">Model used exclusively for agent routing decisions.</small>
+        </div>
+
+        <div class="form-group">
+          <label for="team-temperature">Selector Temperature</label>
+          <input type="number"
+                 id="team-temperature"
+                 name="team[temperature]"
+                 class="input input--sm"
+                 value="{{ project.team.temperature|default:'0.0' }}"
+                 step="0.1"
+                 min="0"
+                 max="2">
+          <small class="form-hint">0.0 = deterministic routing (recommended).</small>
+        </div>
+
+        <div class="form-group">
+          <label for="team-system-prompt">Selector Prompt</label>
+          <textarea id="team-system-prompt"
+                    name="team[system_prompt]"
+                    class="input input--textarea input--sm input--prompt"
+                    rows="12"
+                    placeholder="Paste the selector prompt…">{% if project.team.system_prompt %}{{ project.team.system_prompt }}{% else %}{{ selector_prompt_hint }}{% endif %}</textarea>
+          <small class="form-hint">Use <code>{roles}</code>, <code>{history}</code>, <code>{participants}</code> placeholders.</small>
+        </div>
+
+        <div class="form-group form-group--inline">
+          <label>
+            <input type="checkbox"
+                   id="allow_repeated_speaker"
+                   name="team[allow_repeated_speaker]"
+                   {% if project.team.allow_repeated_speaker|default:True %}checked{% endif %}>
+            Allow repeated speaker
+          </label>
+        </div>
+      </div>
+    </div>
+
   </fieldset>
 
-  <!-- Submit / Clear -->
+  <!-- ====== INTEGRATIONS ====== -->
+  <fieldset class="form-group">
+    <legend>Integrations (Export)</legend>
+
+    <div class="form-group form-group--inline">
+      <label>
+        <input type="checkbox"
+               id="integrations-enabled"
+               name="integrations[enabled]"
+               {% if project.integrations.enabled %}checked{% endif %}>
+        Enable export integrations
+      </label>
+    </div>
+
+    <div id="integrations-fields" {% if not project.integrations.enabled %}hidden{% endif %}>
+
+      <!-- ---- Trello ---- -->
+      <fieldset class="form-group form-group--nested">
+        <legend>Trello</legend>
+
+        <div class="form-group form-group--inline">
+          <label>
+            <input type="checkbox"
+                   id="integrations-trello-enabled"
+                   name="integrations[trello][enabled]"
+                   {% if project.integrations.trello.enabled %}checked{% endif %}>
+            Enable Trello
+          </label>
+        </div>
+
+        <div id="integrations-trello-fields" {% if not project.integrations.trello.enabled %}hidden{% endif %}>
+          <div class="form-group">
+            <label>Export Agents</label>
+            <div id="integrations-export-agents">
+              {% if project.agents %}
+                {% for agent in project.agents %}
+                  <div class="form-group form-group--inline">
+                    <label>
+                      <input type="checkbox"
+                             name="integrations[trello][export_agents]"
+                             value="{{ agent.name }}"
+                             {% if agent.name in project.integrations.trello.export_agents %}checked{% endif %}>
+                      {{ agent.name }}
+                    </label>
+                  </div>
+                {% endfor %}
+              {% endif %}
+            </div>
+            <small class="form-hint">Checked agents show a Trello Export button. Leave all unchecked to show on every message.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="trello-app-name">App Name</label>
+            <input type="text"
+                   id="trello-app-name"
+                   name="integrations[trello][app_name]"
+                   class="input input--sm"
+                   value="{{ project.integrations.trello.app_name|default:'' }}"
+                   placeholder="ProductDiscovery"
+                   required>
+            <small class="form-hint">Displayed in the Trello authorization popup.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="trello-api-key">API Key</label>
+            <input type="password"
+                   id="trello-api-key"
+                   name="integrations[trello][api_key]"
+                   class="input input--sm"
+                   value="{{ project.integrations.trello.api_key|default:'' }}"
+                   placeholder="Paste your Trello API key">
+            <small class="form-hint">Get from <a href="https://trello.com/power-ups/admin" target="_blank" rel="noopener">Trello Power-Ups admin</a>.
+          </div>
+
+          <!-- Token row (always visible when Trello enabled) -->
+          <div class="form-group" id="trello-token-section">
+            <label>Token</label>
+            <div class="trello-token-row">
+              <input type="text"
+                     id="trello-token-display"
+                     class="input input--sm"
+                     value="{% if project.integrations.trello.token %}••••••••{% else %}Not generated{% endif %}"
+                     disabled
+                     readonly>
+              <button type="button"
+                      class="btn btn--primary btn--sm js-requires-secret"
+                      id="trello-generate-token-btn"
+                      {% if mode == 'create' %}disabled{% endif %}>
+                <span id="trello-generate-btn-label">Generate Token</span>
+                <span id="trello-generate-btn-spinner" hidden aria-hidden="true">&#x23F3; Authorizing&hellip;</span>
+              </button>
+            </div>
+            <small class="form-hint trello-token-status" id="trello-token-generated-at">
+              {% if mode == 'create' %}<strong>Save first</strong> to generate the token{% elif project.integrations.trello.token_generated_at %}Generated: {{ project.integrations.trello.token_generated_at }}{% endif %}
+            </small>
+            <input type="hidden" name="integrations[trello][token]" value="{{ project.integrations.trello.token|default:'' }}">
+            <input type="hidden" name="integrations[trello][token_generated_at]" value="{{ project.integrations.trello.token_generated_at|default:'' }}">
+          </div>
+
+          <!-- Cascade dropdowns (visible when token exists, edit mode only) -->
+          <div id="trello-cascade-section" {% if mode == 'create' or not project.integrations.trello.token %}hidden{% endif %}>
+            <div class="form-group">
+              <label for="trello-workspace-select">Default Workspace</label>
+              <select id="trello-workspace-select" class="input input--sm">
+                <option value="">— Select to load —</option>
+              </select>
+              <input type="hidden" name="integrations[trello][default_workspace_id]" id="trello-default-workspace-id"
+                     value="{{ project.integrations.trello.default_workspace_id|default:'' }}">
+              <input type="hidden" name="integrations[trello][default_workspace_name]" id="trello-default-workspace-name"
+                     value="{{ project.integrations.trello.default_workspace_name|default:'' }}">
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="trello-board-select">Default Board</label>
+                <select id="trello-board-select" class="input input--sm" disabled>
+                  <option value="">—</option>
+                </select>
+                <input type="hidden" name="integrations[trello][default_board_id]" id="trello-default-board-id"
+                       value="{{ project.integrations.trello.default_board_id|default:'' }}">
+                <input type="hidden" name="integrations[trello][default_board_name]" id="trello-default-board-name"
+                       value="{{ project.integrations.trello.default_board_name|default:'' }}">
+              </div>
+              <div class="form-group">
+                <label for="trello-list-select">Default List</label>
+                <select id="trello-list-select" class="input input--sm" disabled>
+                  <option value="">—</option>
+                </select>
+                <input type="hidden" name="integrations[trello][default_list_id]" id="trello-default-list-id"
+                       value="{{ project.integrations.trello.default_list_id|default:'' }}">
+                <input type="hidden" name="integrations[trello][default_list_name]" id="trello-default-list-name"
+                       value="{{ project.integrations.trello.default_list_name|default:'' }}">
+              </div>
+            </div>
+          </div>
+
+          <!-- Create New mini-modal (shared for board/list) -->
+          <div class="trello-create-modal" id="trello-create-modal" hidden>
+            <div class="trello-create-modal__overlay" id="trello-create-modal-overlay"></div>
+            <div class="trello-create-modal__card">
+              <h4 id="trello-create-modal-title">Create New</h4>
+              <div class="form-group">
+                <input type="text" id="trello-create-modal-input" class="input input--sm" placeholder="Enter name">
+              </div>
+              <div class="form-actions">
+                <button type="button" class="btn btn--primary btn--sm" id="trello-create-modal-confirm">Create</button>
+                <button type="button" class="btn btn--secondary btn--sm" id="trello-create-modal-cancel">Cancel</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="trello-export-model">Extraction Model</label>
+              <select id="trello-export-model"
+                      name="integrations[trello][export_mapping][model]"
+                      class="input input--sm">
+                {% for model_name in model_names %}
+                  <option value="{{ model_name }}"
+                          {% if project.integrations.trello.export_mapping.model == model_name %}selected{% endif %}>
+                    {{ model_name }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="trello-export-temperature">Temperature</label>
+              <input type="number"
+                     id="trello-export-temperature"
+                     name="integrations[trello][export_mapping][temperature]"
+                     class="input input--sm"
+                     value="{{ project.integrations.trello.export_mapping.temperature|default:'0.0' }}"
+                     step="0.1"
+                     min="0"
+                     max="2"
+                     placeholder="0.0">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="trello-export-system-prompt">Extraction Prompt</label>
+            <textarea id="trello-export-system-prompt"
+                      name="integrations[trello][export_mapping][system_prompt]"
+                      class="input input--textarea input--sm input--prompt"
+                      rows="10"
+                      placeholder="Paste the extraction prompt…">{% if project.integrations.trello.export_mapping.system_prompt %}{{ project.integrations.trello.export_mapping.system_prompt }}{% else %}{{ trello_export_prompt_hint }}{% endif %}</textarea>
+            <small class="form-hint">Prompt used by the extraction agent to parse the discussion into Trello cards.</small>
+          </div>
+        </div>
+      </fieldset>
+
+    </div>
+  </fieldset>
+
+  <!-- Submit / Clear / Clone -->
   <div class="form-actions">
     <button type="submit" class="btn btn--primary">
       {% if mode == "create" %}Create{% else %}Update{% endif %}
@@ -144,6 +394,14 @@
             hx-swap="innerHTML">
       Clear
     </button>
+    {% if mode == "update" %}
+    <button type="button" class="btn btn--success js-requires-secret"
+            hx-post="{% url 'server:project_clone' project.project_id %}"
+            hx-target="#main-content"
+            hx-swap="innerHTML">
+      Clone
+    </button>
+    {% endif %}
   </div>
 
 </form>

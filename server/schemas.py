@@ -2,7 +2,7 @@
 
 from .model_catalog import get_agent_model_names
 
-TEAM_TYPES = ("round_robin",)
+TEAM_TYPES = ("round_robin", "selector")
 HUMAN_GATE_INTERACTION_MODES = ("approve_reject", "feedback")
 
 
@@ -14,6 +14,20 @@ def validate_agent(data):
     name = (data.get("name") or "").strip()
     if not name:
         raise ValueError("Agent 'name' is required.")
+
+    # AutoGen requires agent names to be valid Python identifiers.
+    # Sanitise: replace spaces/hyphens with underscores, strip the rest.
+    import re
+    sanitised = re.sub(r"[\s\-]+", "_", name)
+    sanitised = re.sub(r"[^\w]", "", sanitised)
+    if sanitised and sanitised[0].isdigit():
+        sanitised = "_" + sanitised
+    if not sanitised or not sanitised.isidentifier():
+        raise ValueError(
+            f"Agent name '{name}' is not a valid identifier. "
+            "Use only letters, digits, and underscores (no spaces or special characters)."
+        )
+    name = sanitised
 
     model = (data.get("model") or data.get("model_name") or "").strip()
     available_models = get_agent_model_names()
@@ -100,10 +114,48 @@ def validate_team(data, human_gate_enabled):
             "'team.max_iterations' cannot be greater than 10 when human gate is disabled."
         )
 
-    return {
+    cleaned = {
         "type": team_type,
         "max_iterations": max_iterations,
     }
+
+    if team_type == "selector":
+        from .model_catalog import get_agent_model_names
+        available_models = get_agent_model_names()
+
+        model = (data.get("model") or "").strip()
+        if not model:
+            raise ValueError("'team.model' is required for Selector team type.")
+        if model not in available_models:
+            raise ValueError(
+                f"'team.model' must be one of {', '.join(available_models)}."
+            )
+
+        system_prompt = (data.get("system_prompt") or "").strip()
+        if not system_prompt:
+            raise ValueError("'team.system_prompt' is required for Selector team type.")
+
+        raw_temperature = data.get("temperature", 0.0)
+        try:
+            temperature = float(raw_temperature)
+            if not (0.0 <= temperature <= 2.0):
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise ValueError("'team.temperature' must be a number between 0 and 2.")
+
+        allow_repeated_raw = data.get("allow_repeated_speaker", True)
+        # Checkbox sends "on" from HTML form, or bool from API
+        if isinstance(allow_repeated_raw, str):
+            allow_repeated_speaker = allow_repeated_raw.lower() in ("on", "true", "1", "yes")
+        else:
+            allow_repeated_speaker = bool(allow_repeated_raw)
+
+        cleaned["model"] = model
+        cleaned["system_prompt"] = system_prompt
+        cleaned["temperature"] = temperature
+        cleaned["allow_repeated_speaker"] = allow_repeated_speaker
+
+    return cleaned
 
 
 def validate_chat_session(data):
@@ -125,6 +177,97 @@ def validate_chat_session(data):
     return {
         "project_id": project_id,
         "description": description,
+    }
+
+
+def validate_export_mapping(data):
+    """Validate and clean an export_mapping sub-object."""
+    if not isinstance(data, dict):
+        data = {}
+
+    system_prompt = (data.get("system_prompt") or "").strip()
+
+    model = (data.get("model") or "").strip()
+    valid_models = get_agent_model_names()
+    if model and model not in valid_models:
+        raise ValueError(
+            f"'integrations.trello.export_mapping.model' '{model}' is not in the model catalog."
+        )
+
+    try:
+        temperature = float(data.get("temperature") or 0.0)
+    except (TypeError, ValueError):
+        temperature = 0.0
+    temperature = max(0.0, min(2.0, temperature))
+
+    return {"system_prompt": system_prompt, "model": model, "temperature": temperature}
+
+
+def validate_integrations(data, agent_names):
+    """Validate and clean the optional integrations configuration."""
+    if not isinstance(data, dict):
+        return {
+            "enabled": False,
+            "trello": {"enabled": False},
+        }
+
+    enabled = bool(data.get("enabled", False))
+
+    if not enabled:
+        return {
+            "enabled": False,
+            "trello": {"enabled": False},
+        }
+
+    # --- Trello ---
+    raw_trello = data.get("trello") or {}
+    trello_enabled = bool(raw_trello.get("enabled", False))
+    trello = {"enabled": trello_enabled}
+
+    if trello_enabled:
+        app_name = (raw_trello.get("app_name") or "").strip()
+        if not app_name:
+            raise ValueError("'integrations.trello.app_name' is required when Trello is enabled.")
+
+        api_key = (raw_trello.get("api_key") or "").strip()
+        if not api_key:
+            raise ValueError("'integrations.trello.api_key' is required when Trello is enabled.")
+
+        # Validate export_agents list
+        raw_ea = raw_trello.get("export_agents") or []
+        if isinstance(raw_ea, str):
+            raw_ea = [raw_ea] if raw_ea else []
+        export_agents = [n.strip() for n in raw_ea if isinstance(n, str) and n.strip()]
+        lower_names = [n.lower() for n in agent_names]
+        for ea in export_agents:
+            if ea.lower() not in lower_names:
+                raise ValueError(
+                    f"'integrations.trello.export_agents' entry '{ea}' must match an existing agent name."
+                )
+
+        trello["export_agents"] = export_agents
+        trello["app_name"] = app_name
+        trello["api_key"] = api_key
+        trello["token"] = (raw_trello.get("token") or "").strip()
+        trello["token_generated_at"] = (raw_trello.get("token_generated_at") or "").strip()
+        trello["default_workspace_id"] = (raw_trello.get("default_workspace_id") or "").strip()
+        trello["default_workspace_name"] = (raw_trello.get("default_workspace_name") or raw_trello.get("default_workspace") or "").strip()
+        trello["default_board_id"] = (raw_trello.get("default_board_id") or "").strip()
+        trello["default_board_name"] = (raw_trello.get("default_board_name") or "").strip()
+        trello["default_list_id"] = (raw_trello.get("default_list_id") or "").strip()
+        trello["default_list_name"] = (raw_trello.get("default_list_name") or "").strip()
+        trello["export_mapping"] = validate_export_mapping(
+            raw_trello.get("export_mapping") or {}
+        )
+
+    if enabled and not trello_enabled:
+        raise ValueError(
+            "Trello must be enabled when integrations are enabled."
+        )
+
+    return {
+        "enabled": enabled,
+        "trello": trello,
     }
 
 
@@ -152,6 +295,10 @@ def validate_project(data):
 
     human_gate = validate_human_gate(data.get("human_gate") or {})
     team = validate_team(data.get("team") or {}, human_gate["enabled"])
+    integrations = validate_integrations(
+        data.get("integrations") or {},
+        [a["name"] for a in agents],
+    )
 
     return {
         "project_name": project_name,
@@ -159,4 +306,5 @@ def validate_project(data):
         "agents": agents,
         "human_gate": human_gate,
         "team": team,
+        "integrations": integrations,
     }

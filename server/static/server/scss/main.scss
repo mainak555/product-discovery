@@ -742,8 +742,9 @@ select.input {
 // ---------------------------------------------------------------------------
 .chat-session-item {
   display: flex;
-  align-items: flex-start;
-  gap: $space-xs;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
   padding: $space-sm $space-md;
   border-left: 3px solid transparent;
   transition: background 0.15s, border-color 0.15s;
@@ -758,6 +759,26 @@ select.input {
     background: lighten($color-primary, 40%);
     border-left-color: $color-primary;
   }
+}
+
+.chat-session-item__row1 {
+  display: flex;
+  align-items: center;
+  gap: $space-xs;
+}
+
+.chat-session-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.chat-session-item__row2 {
+  display: flex;
+  align-items: center;
+  gap: $space-xs;
+  min-height: 1rem;
 }
 
 .chat-session-item__name {
@@ -776,9 +797,23 @@ select.input {
   color: $color-text-muted;
   white-space: nowrap;
   flex-shrink: 0;
-  margin-top: 1px;
+  margin-left: auto;
 }
 
+.chat-session-item__badge {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #1d4ed8;
+  background: #dbeafe;
+  border: 1px solid #93c5fd;
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.chat-session-item__edit,
 .chat-session-item__delete {
   flex-shrink: 0;
   background: none;
@@ -790,10 +825,19 @@ select.input {
   padding: 0 3px;
   border-radius: $radius;
   transition: color 0.15s, background 0.15s;
+}
 
+.chat-session-item__delete {
   &:hover {
     color: $color-error;
     background: lighten($color-error, 38%);
+  }
+}
+
+.chat-session-item__edit {
+  &:hover {
+    color: $color-primary;
+    background: lighten($color-primary, 40%);
   }
 }
 
@@ -1191,4 +1235,989 @@ select.input {
 
   strong { font-weight: 700; }
   em     { font-style: italic; }
+}
+
+// ---------------------------------------------------------------------------
+// Chat bubbles
+// ---------------------------------------------------------------------------
+.chat-history {
+  display: flex;
+  flex-direction: column;
+  gap: $space-md;
+  padding: $space-md;
+}
+
+.chat-bubble {
+  display: flex;
+  gap: $space-sm;
+  max-width: 92%;
+
+  &--human {
+    align-self: flex-end;
+    flex-direction: column;
+    align-items: flex-end;
+    max-width: 72%;
+
+    .chat-bubble__meta {
+      justify-content: flex-end;
+    }
+
+    .chat-bubble__content {
+      background: $color-primary;
+      color: #fff;
+      border-radius: $radius $radius 0 $radius;
+      padding: $space-sm $space-md;
+      font-size: $font-size-base;
+      line-height: 1.55;
+      word-break: break-word;
+      text-align: left;
+      overflow-x: auto;
+
+      p { margin-bottom: $space-xs; }
+      p:last-child { margin-bottom: 0; }
+
+      table {
+        width: 100%;
+        min-width: 360px;
+        border-collapse: collapse;
+        margin: $space-xs 0;
+      }
+
+      th,
+      td {
+        border: 1px solid lighten($color-primary, 24%);
+        padding: $space-xs $space-sm;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: darken($color-primary, 6%);
+      }
+    }
+  }
+
+  &--ai {
+    align-self: flex-start;
+
+    .chat-bubble__body {
+      display: flex;
+      flex-direction: column;
+      gap: $space-xs;
+    }
+
+    .chat-bubble__content {
+      background: $color-surface;
+      border: 1px solid $color-border;
+      border-radius: 0 $radius $radius $radius;
+      padding: $space-sm $space-md;
+      font-size: $font-size-base;
+      line-height: 1.7;
+      word-break: break-word;
+      text-align: left;
+      overflow-x: auto;
+
+      p { margin-bottom: $space-xs; }
+      p:last-child { margin-bottom: 0; }
+
+      table {
+        width: 100%;
+        min-width: 360px;
+        border-collapse: collapse;
+        margin: $space-xs 0;
+      }
+
+      th,
+      td {
+        border: 1px solid $color-border;
+        padding: $space-xs $space-sm;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: $color-bg;
+        color: $color-text;
+        font-weight: 600;
+      }
+    }
+
+    .chat-bubble__actions {
+      display: flex;
+      justify-content: center;
+      margin-top: 2px;
+    }
+  }
+
+  &--error {
+    align-self: flex-start;
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    border-radius: $radius;
+    padding: $space-sm $space-md;
+    color: #dc2626;
+    font-size: $font-size-sm;
+    max-width: 90%;
+  }
+
+  &__avatar {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    border-radius: 50%;
+    background: $color-primary;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-top: 2px;
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: $space-xs;
+  }
+
+  &__name {
+    font-size: $font-size-sm;
+    font-weight: 600;
+    color: $color-text;
+  }
+
+  &__time {
+    font-size: 0.6875rem;
+    color: $color-text-muted;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Chat status badges (completed / stopped)
+// ---------------------------------------------------------------------------
+.chat-status-badge {
+  display: inline-block;
+  align-self: center;
+  margin: $space-sm auto;
+  padding: $space-xs $space-md;
+  border-radius: $radius-lg;
+  font-size: $font-size-sm;
+  font-weight: 600;
+
+  &--completed {
+    background: #dcfce7;
+    color: $color-success;
+    border: 1px solid lighten($color-success, 40%);
+  }
+
+  &--stopped {
+    background: #fef2f2;
+    color: $color-error;
+    border: 1px solid lighten($color-error, 35%);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Human gate panel
+// ---------------------------------------------------------------------------
+.human-gate-panel {
+  margin: $space-md;
+  padding: $space-md;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-left: 4px solid #f59e0b;
+  border-radius: $radius;
+
+  &__prompt {
+    font-size: $font-size-base;
+    color: $color-text;
+    margin-bottom: $space-md;
+    line-height: 1.5;
+  }
+
+  &__textarea {
+    width: 100%;
+    margin-bottom: $space-sm;
+    resize: vertical;
+    font-size: $font-size-base;
+  }
+
+  &__actions {
+    display: flex;
+    gap: $space-sm;
+    flex-wrap: wrap;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Restart panel
+// ---------------------------------------------------------------------------
+.chat-restart-panel {
+  margin: $space-md;
+  padding: $space-md;
+  background: #eff6ff;
+  border: 1px solid #93c5fd;
+  border-left: 4px solid #3b82f6;
+  border-radius: $radius;
+
+  &__title {
+    font-size: $font-size-base;
+    font-weight: 700;
+    color: $color-text;
+    margin-bottom: $space-xs;
+  }
+
+  &__hint {
+    font-size: $font-size-sm;
+    color: $color-text-muted;
+    line-height: 1.5;
+    margin-bottom: $space-sm;
+  }
+
+  &__actions {
+    display: flex;
+    gap: $space-sm;
+    flex-wrap: wrap;
+  }
+
+  &__context {
+    margin-top: $space-sm;
+  }
+
+  &__textarea {
+    width: 100%;
+    resize: vertical;
+    margin-bottom: $space-sm;
+  }
+
+  &__context-actions {
+    display: flex;
+    gap: $space-sm;
+    flex-wrap: wrap;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gate action buttons
+// ---------------------------------------------------------------------------
+.btn--success {
+  background: $color-success;
+  color: #fff;
+  border-color: $color-success;
+
+  &:hover { background: darken($color-success, 8%); border-color: darken($color-success, 8%); }
+}
+
+.btn--danger {
+  background: $color-error;
+  color: #fff;
+  border-color: $color-error;
+
+  &:hover { background: darken($color-error, 8%); border-color: darken($color-error, 8%); }
+}
+
+// ---------------------------------------------------------------------------
+// Stop button (hidden by default, shown while running)
+// ---------------------------------------------------------------------------
+.chat-stop-btn {
+  flex-shrink: 0;
+}
+
+// ---------------------------------------------------------------------------
+// Export UI
+// ---------------------------------------------------------------------------
+.export-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.export-dropdown__toggle {
+  min-width: 5.85rem;
+  padding: 0.42rem 0.85rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  justify-content: center;
+  background: $color-info;
+  border-color: darken($color-info, 6%);
+  color: #fff;
+
+  &:hover,
+  &:focus-visible {
+    background: darken($color-info, 6%);
+    border-color: darken($color-info, 10%);
+    color: #fff;
+    outline: none;
+  }
+}
+
+.export-dropdown__menu {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: calc(100% + 4px);
+  min-width: 9rem;
+  background: $color-surface;
+  border: 1px solid $color-border;
+  border-radius: $radius;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  z-index: 350;
+}
+
+.export-dropdown__item {
+  width: 100%;
+  text-align: left;
+  background: $color-surface;
+  color: $color-text;
+  border: 0;
+  border-bottom: 1px solid $color-border;
+  padding: 7px 10px;
+  font-size: $font-size-sm;
+  cursor: pointer;
+
+  &:last-child {
+    border-bottom: 0;
+  }
+
+  &:hover,
+  &:focus-visible {
+    background: $color-bg;
+    outline: none;
+  }
+}
+
+// Trello export modal overlay
+.export-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.export-modal {
+  background: $color-bg;
+  border-radius: $radius;
+  width: 100%;
+  max-width: 1100px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+
+  &--wide {
+    max-width: 1220px;
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: $space-sm $space-md;
+    border-bottom: 1px solid $color-border;
+
+    h3 { margin: 0; }
+  }
+
+  &__close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: $color-text-muted;
+    &:hover { color: $color-text; }
+  }
+
+  &__body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: $space-md;
+  }
+
+  &__section {
+    margin-bottom: $space-md;
+
+    h4 {
+      margin: 0 0 $space-sm;
+      font-size: $font-size-base;
+    }
+  }
+
+  &__footer {
+    display: flex;
+    align-items: center;
+    gap: $space-sm;
+    padding: $space-sm $space-md;
+    border-top: 1px solid $color-border;
+  }
+
+  &__token-status {
+    &--valid { color: $color-success; font-weight: 600; }
+    &--expired { color: $color-error; }
+  }
+}
+
+.trello-editor {
+  $trello-main-card-bg: lighten($color-bg, 1.5%);
+  $trello-subsection-bg: lighten($color-bg, 0.5%);
+  $trello-inner-card-bg: $color-surface;
+  $trello-context-action-bg: lighten($color-primary, 43%);
+  $trello-context-action-border: lighten($color-primary, 28%);
+  $trello-context-action-text: darken($color-primary, 12%);
+
+  &__section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-sm;
+    margin-bottom: $space-xs;
+
+    h4 { margin: 0; }
+
+    #trello-add-card-btn {
+      background: $trello-context-action-bg;
+      border-color: $trello-context-action-border;
+      color: $trello-context-action-text;
+
+      &:hover,
+      &:focus-visible {
+        background: lighten($color-primary, 38%);
+        border-color: lighten($color-primary, 20%);
+        color: darken($color-primary, 16%);
+      }
+    }
+  }
+
+  &__section-divider {
+    border-top: 1px solid $color-border;
+    margin-bottom: $space-sm;
+  }
+
+  &__header-row {
+    display: grid;
+    grid-template-columns: 1fr 140px;
+    align-items: center;
+    border-bottom: 1px solid $color-border;
+    padding-bottom: $space-xs;
+    margin-bottom: $space-sm;
+    font-size: $font-size-sm;
+    color: $color-text-muted;
+  }
+
+  &__cards {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: $space-xs;
+    margin-bottom: $space-sm;
+  }
+
+  &__card {
+    display: block;
+    border: 1px solid darken($color-border, 3%);
+    border-radius: $radius;
+    margin-bottom: $space-sm;
+    background: $trello-main-card-bg;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  }
+
+  &__card-index {
+    border-right: 1px solid $color-border;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    font-weight: 700;
+    padding: $space-sm;
+  }
+
+  &__card-body {
+    padding: $space-sm;
+    display: flex;
+    flex-direction: column;
+    gap: $space-xs;
+
+    label {
+      font-size: $font-size-sm;
+      font-weight: 600;
+      color: $color-text-muted;
+    }
+  }
+
+  &__card-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-sm;
+
+    label {
+      margin: 0;
+    }
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: 1fr 180px 140px;
+    gap: $space-sm;
+  }
+
+  &__subsection {
+    border: 1px solid darken($color-border, 2%);
+    border-radius: $radius;
+    padding: $space-sm;
+    margin-top: $space-xs;
+    background: $trello-subsection-bg;
+
+    .js-add-checklist,
+    .js-add-custom-field {
+      background: $trello-context-action-bg;
+      border-color: $trello-context-action-border;
+      color: $trello-context-action-text;
+
+      &:hover,
+      &:focus-visible {
+        background: lighten($color-primary, 38%);
+        border-color: lighten($color-primary, 20%);
+        color: darken($color-primary, 16%);
+      }
+    }
+  }
+
+  &__subsection-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: $space-xs;
+  }
+
+  &__checklist {
+    border: 1px solid darken($color-border, 4%);
+    border-radius: $radius;
+    padding: $space-xs;
+    margin-bottom: $space-xs;
+    background: $trello-inner-card-bg;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  }
+
+  &__checklist-head {
+    display: flex;
+    align-items: center;
+    gap: $space-xs;
+    margin-bottom: $space-xs;
+
+    .js-checklist-name {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  &__custom-field {
+    display: grid;
+    grid-template-columns: 1fr 2fr auto;
+    gap: $space-xs;
+    align-items: start;
+    margin-bottom: $space-xs;
+    border: 1px solid darken($color-border, 3%);
+    border-radius: $radius;
+    background: $trello-inner-card-bg;
+    padding: $space-xs;
+  }
+}
+
+.trello-workbench {
+  display: grid;
+  grid-template-columns: 7fr 3fr;
+  flex: 1;
+  align-items: stretch;
+  min-height: 0;
+  gap: $space-md;
+}
+
+.trello-workbench__pane--editor {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+
+  #trello-workspace-section {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0;
+  }
+}
+
+.trello-workbench__pane--reference {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid $color-border;
+  padding-left: $space-md;
+}
+
+#trello-destination-section {
+  .cascade-select {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: $space-sm;
+    align-items: start;
+  }
+
+  .cascade-select__group {
+    min-width: 0;
+  }
+
+  .cascade-select__group select,
+  .cascade-select__group .input {
+    width: 100%;
+  }
+}
+
+.trello-reference {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+
+  h4 {
+    margin: 0 0 $space-sm;
+    font-size: $font-size-base;
+  }
+}
+
+.trello-reference__markdown {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  line-height: 1.6;
+  font-size: $font-size-sm;
+  border: 1px solid $color-border;
+  border-radius: $radius;
+  background: $color-surface;
+  padding: $space-sm;
+
+  h1, h2, h3, h4, h5, h6 {
+    margin: 0 0 $space-xs;
+    line-height: 1.35;
+  }
+
+  h2, h3 {
+    color: $color-primary-dk;
+  }
+
+  p {
+    margin: 0 0 $space-sm;
+  }
+
+  ul {
+    margin: 0 0 $space-sm;
+    padding-left: 1.2rem;
+  }
+
+  table {
+    width: 100%;
+    min-width: 360px;
+    border-collapse: collapse;
+    margin: 0 0 $space-sm;
+  }
+
+  th,
+  td {
+    border: 1px solid $color-border;
+    padding: $space-xs $space-sm;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background: $color-bg;
+    color: $color-text;
+    font-weight: 600;
+  }
+
+  li {
+    margin-bottom: 2px;
+  }
+
+  .md-task-list {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .md-task-list li {
+    display: flex;
+    gap: $space-xs;
+    align-items: flex-start;
+  }
+
+  .md-task-list input[type="checkbox"] {
+    margin-top: 3px;
+  }
+
+  code {
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius;
+    padding: 1px 4px;
+    font-size: 0.8rem;
+  }
+
+  pre {
+    margin: 0 0 $space-sm;
+    padding: $space-sm;
+    border: 1px solid $color-border;
+    border-radius: $radius;
+    background: $color-bg;
+    overflow-x: auto;
+  }
+
+  pre code {
+    border: 0;
+    padding: 0;
+    background: transparent;
+  }
+
+  hr {
+    border: 0;
+    border-top: 1px solid $color-border;
+    margin: $space-sm 0;
+  }
+}
+
+.export-modal__footer--wrap {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  .export-modal {
+    max-width: 96vw;
+
+    &__body {
+      display: block;
+      overflow-y: auto;
+    }
+  }
+
+  .trello-workbench {
+    grid-template-columns: 1fr;
+    min-height: auto;
+    height: auto;
+    gap: $space-sm;
+  }
+
+  .trello-workbench__pane--reference {
+    border-left: 0;
+    border-top: 1px solid $color-border;
+    padding-left: 0;
+    padding-top: $space-sm;
+    margin-top: $space-sm;
+  }
+
+  .trello-editor {
+    &__card {
+      grid-template-columns: 1fr;
+    }
+
+    &__card-index {
+      border-right: 0;
+      border-bottom: 1px solid $color-border;
+      justify-content: flex-start;
+    }
+
+    &__row {
+      grid-template-columns: 1fr;
+    }
+
+    &__checklist,
+    &__custom-field {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  #trello-destination-section {
+    .cascade-select {
+      grid-template-columns: 1fr;
+    }
+  }
+}
+
+// Cascade select (workspace → board → list)
+.cascade-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-sm;
+
+  &__group {
+    flex: 1 1 180px;
+    display: flex;
+    flex-direction: column;
+    gap: $space-xs;
+
+    label {
+      font-weight: 600;
+      font-size: $font-size-sm;
+    }
+  }
+
+  &__create-new {
+    display: flex;
+    gap: $space-xs;
+    margin-top: $space-xs;
+  }
+}
+
+// Mapping guide badges
+.mapping-guide {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-xs;
+}
+
+.mapping-badge {
+  display: inline-block;
+  padding: 2px $space-xs;
+  border-radius: $radius;
+  font-size: $font-size-sm;
+
+  &--card { background: #dbeafe; color: #1e40af; }
+  &--desc { background: #fef3c7; color: #92400e; }
+  &--checklist { background: #d1fae5; color: #065f46; }
+}
+
+// Export preview items
+.export-preview {
+  &__item {
+    padding: $space-sm 0;
+    border-bottom: 1px solid $color-border;
+    border-left: 3px solid #93c5fd;
+    padding-left: $space-sm;
+    margin-bottom: $space-xs;
+
+    &:last-child { border-bottom: none; }
+
+    ul {
+      margin: $space-xs 0 0 $space-md;
+      list-style: none;
+      padding: 0;
+    }
+
+    li { margin-bottom: $space-xs; }
+
+    p {
+      margin: $space-xs 0;
+      color: $color-text-muted;
+      font-size: $font-size-sm;
+    }
+  }
+
+  &__success {
+    padding: $space-sm;
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    border-radius: $radius;
+
+    ul { margin: $space-xs 0 0 $space-md; }
+    a { color: $color-primary; }
+  }
+}
+
+// Integrations nested fieldset
+.form-group--nested {
+  margin-left: $space-md;
+  padding-left: $space-md;
+  border-left: 3px solid $color-border;
+}
+
+.form-row--align-center {
+  display: flex;
+  align-items: center;
+  gap: $space-sm;
+}
+
+// ---------------------------------------------------------------------------
+// Trello Config — Token row & cascade dropdowns (config page)
+// ---------------------------------------------------------------------------
+
+.trello-token-row {
+  display: flex;
+  align-items: center;
+  gap: $space-sm;
+
+  input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+}
+
+.trello-token-status {
+  display: block;
+  margin-top: $space-xs;
+  color: $color-text-muted;
+  font-size: $font-size-sm;
+}
+
+// Create-new mini modal (board / list)
+.trello-create-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &__overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+  }
+
+  &__card {
+    position: relative;
+    background: $color-surface;
+    border: 1px solid $color-border;
+    border-radius: $radius-lg;
+    padding: $space-lg;
+    min-width: 320px;
+    max-width: 420px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+
+    h4 { margin-bottom: $space-sm; }
+  }
+
+  .form-actions {
+    display: flex;
+    gap: $space-sm;
+    margin-top: $space-sm;
+    justify-content: flex-end;
+  }
+}
+
+// Badge styles for token status in readonly view
+.badge {
+  display: inline-block;
+  padding: 2px $space-xs;
+  border-radius: $radius;
+  font-size: $font-size-sm;
+  font-weight: 600;
+}
+
+.badge-success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badge-error {
+  background: #fef2f2;
+  color: #991b1b;
 }
