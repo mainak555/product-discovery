@@ -675,9 +675,7 @@
       checklistRows.forEach(function (checklistRow) {
         var listName = (checklistRow.querySelector(".js-checklist-name") || {}).value || "Tasks";
         var listItems = _parseChecklistLines((checklistRow.querySelector(".js-checklist-items") || {}).value || "");
-        if (listItems.length) {
-          card.checklists.push({ name: listName.trim() || "Tasks", items: listItems });
-        }
+        card.checklists.push({ name: listName.trim() || "Tasks", items: listItems });
       });
 
       card.custom_fields = [];
@@ -685,13 +683,11 @@
       customRows.forEach(function (customRow) {
         var fieldName = (customRow.querySelector(".js-custom-name") || {}).value || "";
         var fieldValue = (customRow.querySelector(".js-custom-value") || {}).value || "";
-        if (fieldName.trim()) {
-          card.custom_fields.push({
-            field_name: fieldName.trim(),
-            field_type: "text",
-            value: fieldValue.trim(),
-          });
-        }
+        card.custom_fields.push({
+          field_name: fieldName.trim(),
+          field_type: "text",
+          value: fieldValue.trim(),
+        });
       });
 
       cards.push(card);
