@@ -1813,13 +1813,78 @@ select.input {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  white-space: pre-wrap;
   line-height: 1.6;
   font-size: $font-size-sm;
   border: 1px solid $color-border;
   border-radius: $radius;
   background: $color-surface;
   padding: $space-sm;
+
+  h1, h2, h3, h4, h5, h6 {
+    margin: 0 0 $space-xs;
+    line-height: 1.35;
+  }
+
+  h2, h3 {
+    color: $color-primary-dk;
+  }
+
+  p {
+    margin: 0 0 $space-sm;
+  }
+
+  ul {
+    margin: 0 0 $space-sm;
+    padding-left: 1.2rem;
+  }
+
+  li {
+    margin-bottom: 2px;
+  }
+
+  .md-task-list {
+    list-style: none;
+    padding-left: 0;
+  }
+
+  .md-task-list li {
+    display: flex;
+    gap: $space-xs;
+    align-items: flex-start;
+  }
+
+  .md-task-list input[type="checkbox"] {
+    margin-top: 3px;
+  }
+
+  code {
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius;
+    padding: 1px 4px;
+    font-size: 0.8rem;
+  }
+
+  pre {
+    margin: 0 0 $space-sm;
+    padding: $space-sm;
+    border: 1px solid $color-border;
+    border-radius: $radius;
+    background: $color-bg;
+    overflow-x: auto;
+  }
+
+  pre code {
+    border: 0;
+    padding: 0;
+    background: transparent;
+  }
+
+  hr {
+    border: 0;
+    border-top: 1px solid $color-border;
+    margin: $space-sm 0;
+  }
 }
 
 .export-modal__footer--wrap {

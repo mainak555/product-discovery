@@ -40,7 +40,7 @@
   }
 
   function _defaultReferenceMarkdown() {
-    return "No extracted agent output available yet.\nUse Extract Items or load a saved export to populate this reference panel.";
+    return "No agent discussion content available for this reference panel.";
   }
 
   function _formatReferenceValue(value, fallback) {
@@ -113,10 +113,112 @@
     return lines.join("\n");
   }
 
+  function _renderInlineMarkdown(text) {
+    var html = _esc(text || "");
+    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return html;
+  }
+
+  function _markdownToHtml(markdown) {
+    var src = String(markdown || "").replace(/\r\n?/g, "\n");
+    var lines = src.split("\n");
+    var out = [];
+    var i = 0;
+
+    while (i < lines.length) {
+      var line = lines[i];
+
+      if (!line.trim()) {
+        i += 1;
+        continue;
+      }
+
+      if (/^```/.test(line.trim())) {
+        var codeLines = [];
+        i += 1;
+        while (i < lines.length && !/^```/.test(lines[i].trim())) {
+          codeLines.push(lines[i]);
+          i += 1;
+        }
+        if (i < lines.length) i += 1;
+        out.push('<pre><code>' + _esc(codeLines.join("\n")) + '</code></pre>');
+        continue;
+      }
+
+      if (/^---+$/.test(line.trim())) {
+        out.push("<hr>");
+        i += 1;
+        continue;
+      }
+
+      var heading = line.match(/^(#{1,6})\s+(.+)$/);
+      if (heading) {
+        var level = heading[1].length;
+        out.push("<h" + level + ">" + _renderInlineMarkdown(heading[2]) + "</h" + level + ">");
+        i += 1;
+        continue;
+      }
+
+      if (/^\s*-\s+\[[ xX]\]\s+/.test(line)) {
+        var taskItems = [];
+        while (i < lines.length && /^\s*-\s+\[[ xX]\]\s+/.test(lines[i])) {
+          var mTask = lines[i].match(/^\s*-\s+\[([ xX])\]\s+(.+)$/);
+          var checked = mTask && /x/i.test(mTask[1]);
+          var taskText = mTask ? mTask[2] : "";
+          taskItems.push('<li class="is-task"><input type="checkbox" disabled' + (checked ? ' checked' : '') + '><span>' + _renderInlineMarkdown(taskText) + '</span></li>');
+          i += 1;
+        }
+        out.push('<ul class="md-task-list">' + taskItems.join("") + '</ul>');
+        continue;
+      }
+
+      if (/^\s*-\s+/.test(line)) {
+        var listItems = [];
+        while (i < lines.length && /^\s*-\s+/.test(lines[i])) {
+          var m = lines[i].match(/^\s*-\s+(.+)$/);
+          listItems.push("<li>" + _renderInlineMarkdown(m ? m[1] : "") + "</li>");
+          i += 1;
+        }
+        out.push("<ul>" + listItems.join("") + "</ul>");
+        continue;
+      }
+
+      var paraLines = [];
+      while (i < lines.length && lines[i].trim() && !/^(#{1,6})\s+/.test(lines[i]) && !/^---+$/.test(lines[i].trim()) && !/^```/.test(lines[i].trim()) && !/^\s*-\s+/.test(lines[i])) {
+        paraLines.push(lines[i]);
+        i += 1;
+      }
+      out.push("<p>" + _renderInlineMarkdown(paraLines.join(" ")) + "</p>");
+    }
+
+    return out.join("\n");
+  }
+
   function _renderReferenceMarkdown(markdown) {
     var el = document.getElementById("trello-reference-markdown");
     if (!el) return;
-    el.textContent = markdown || "";
+    el.innerHTML = _markdownToHtml(markdown || "");
+  }
+
+  function _loadDiscussionReference() {
+    if (!_state.discussionId) {
+      _state.referenceMarkdown = _defaultReferenceMarkdown();
+      _renderReferenceMarkdown(_state.referenceMarkdown);
+      return;
+    }
+
+    _api("GET", "/trello/" + _state.sessionId + "/reference/" + encodeURIComponent(_state.discussionId) + "/")
+      .then(function (data) {
+        _state.referenceMarkdown = (data && data.markdown) ? String(data.markdown) : _defaultReferenceMarkdown();
+        _renderReferenceMarkdown(_state.referenceMarkdown);
+      })
+      .catch(function () {
+        _state.referenceMarkdown = _defaultReferenceMarkdown();
+        _renderReferenceMarkdown(_state.referenceMarkdown);
+      });
   }
 
   function _createModal() {
@@ -176,7 +278,7 @@
       + '</div>'
       + '<div class="trello-workbench__pane trello-workbench__pane--reference">'
       + '<div class="trello-reference">'
-      + '<h4>Extracted Agent Output (Reference)</h4>'
+      + '<h4>Agent Raw Output (Reference)</h4>'
       + '<div id="trello-reference-markdown" class="trello-reference__markdown"></div>'
       + '</div>'
       + '</div>'
@@ -452,17 +554,13 @@
       .then(function (data) {
         var cards = (data.export && data.export.cards) || [];
         _state.cards = cards.length ? cards : [_emptyCard()];
-        _state.referenceMarkdown = _buildReferenceMarkdown(cards);
         _renderEditorCards();
-        _renderReferenceMarkdown(_state.referenceMarkdown);
         _setStatus(data.saved ? "Loaded saved export JSON." : "No saved JSON found. You can extract or edit manually.");
         _syncFooter();
       })
       .catch(function (err) {
         _state.cards = [_emptyCard()];
-        _state.referenceMarkdown = _defaultReferenceMarkdown();
         _renderEditorCards();
-        _renderReferenceMarkdown(_state.referenceMarkdown);
         _setStatus("Load error: " + err.message);
       });
   }
@@ -479,9 +577,7 @@
       .then(function (d) {
         var extractedCards = d.items || [];
         _state.cards = extractedCards.length ? extractedCards : [_emptyCard()];
-        _state.referenceMarkdown = _buildReferenceMarkdown(extractedCards);
         _renderEditorCards();
-        _renderReferenceMarkdown(_state.referenceMarkdown);
         _setStatus("Extracted " + ((d.items || []).length) + " card(s).");
         document.getElementById("trello-extract-btn").disabled = false;
         _syncFooter();
@@ -710,6 +806,7 @@
 
     _createModal();
     _renderReferenceMarkdown(_state.referenceMarkdown);
+    _loadDiscussionReference();
     _checkToken();
     _loadSavedExport();
   }

@@ -297,6 +297,20 @@ def trello_export_data(request, session_id, discussion_id):
     return _json_response({"status": "ok", "export": payload})
 
 
+@require_GET
+def trello_discussion_reference(request, session_id, discussion_id):
+    """GET — Return raw discussion.content markdown for reference rendering."""
+    if not _has_valid_secret(request):
+        return _json_error("Unauthorized", 403)
+
+    try:
+        data = trello_service.get_discussion_reference_markdown(session_id, discussion_id)
+    except ValueError as e:
+        return _json_error(str(e))
+
+    return _json_response(data)
+
+
 @csrf_exempt
 @require_POST
 def trello_push(request, session_id):

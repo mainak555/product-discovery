@@ -17,6 +17,7 @@ urlpatterns = [
     # Export
     path("<str:session_id>/extract/<str:discussion_id>/", trello_views.trello_extract, name="trello_extract"),
     path("<str:session_id>/export/<str:discussion_id>/", trello_views.trello_export_data, name="trello_export_data"),
+    path("<str:session_id>/reference/<str:discussion_id>/", trello_views.trello_discussion_reference, name="trello_discussion_reference"),
     path("<str:session_id>/push/", trello_views.trello_push, name="trello_push"),
     # Project-scoped token management (config page)
     path("project/<str:project_id>/auth-url/", trello_views.trello_project_auth_url, name="trello_project_auth_url"),

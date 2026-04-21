@@ -492,3 +492,35 @@ def run_export_push(session_id, list_id, items):
         raise ValueError("No items to export.")
     api_key, token = _resolve_credentials(session_id)
     return trello_client.push_cards(api_key, token, list_id, normalized)
+
+
+def get_discussion_reference_markdown(session_id, discussion_id):
+    """Return raw discussion.content (and metadata) for reference rendering."""
+    try:
+        oid = ObjectId(session_id)
+    except (InvalidId, TypeError):
+        raise ValueError(f"Invalid session ID '{session_id}'.")
+
+    target_discussion_id = (discussion_id or "").strip()
+    if not target_discussion_id:
+        raise ValueError("'discussion_id' is required.")
+
+    col = get_collection(CHAT_SESSIONS_COLLECTION)
+    session_doc = col.find_one({"_id": oid}, {"discussions": 1})
+    if not session_doc:
+        raise ValueError("Chat session not found.")
+
+    for row in session_doc.get("discussions") or []:
+        if not isinstance(row, dict):
+            continue
+        if (row.get("id") or "").strip() != target_discussion_id:
+            continue
+
+        content = str(row.get("content") or "")
+        return {
+            "discussion_id": target_discussion_id,
+            "agent_name": str(row.get("agent_name") or ""),
+            "markdown": content,
+        }
+
+    raise ValueError("Discussion item not found for this session.")
