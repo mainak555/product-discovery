@@ -294,6 +294,45 @@ select.input {
 // ---------------------------------------------------------------------------
 .config-form {
   max-width: 800px;
+
+  .input--sm {
+    padding: $space-sm $space-md;
+    font-size: $font-size-base;
+  }
+
+  .form-group {
+    margin-bottom: $space-sm;
+  }
+
+  fieldset.form-group {
+    margin-bottom: $space-md;
+  }
+
+  .form-row {
+    gap: $space-sm;
+  }
+
+  .agents-fieldset {
+    padding: $space-md;
+  }
+
+  .agent-card {
+    padding: $space-sm $space-md;
+  }
+
+  .agent-card__fields {
+    display: flex;
+    flex-direction: column;
+    gap: $space-sm;
+  }
+
+  .agent-card__fields .form-group {
+    margin-bottom: 0;
+  }
+
+  .agent-card__fields .form-row {
+    margin-bottom: 0;
+  }
 }
 
 .config-form__title {

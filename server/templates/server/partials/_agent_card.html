@@ -7,6 +7,8 @@
     <button type="button" class="btn btn--danger btn--xs remove-agent-btn" title="Remove agent">✕</button>
   </div>
 
+  <div class="agent-card__fields">
+
   <div class="form-row">
     <div class="form-group">
       <label>Name</label>
@@ -34,7 +36,7 @@
   <div class="form-group">
     <label>System Prompt</label>
     <textarea name="agents[{{ idx }}][system_prompt]"
-              class="input input--textarea input--sm input--prompt"
+              class="input input--textarea input--prompt"
               rows="12"
               placeholder="Paste the full system prompt for this agent…"
               required>{% if agent and agent.system_prompt %}{{ agent.system_prompt }}{% else %}{{ default_system_prompt }}{% endif %}</textarea>
@@ -51,5 +53,6 @@
            max="2"
            placeholder="0.7"
            required>
+  </div>
   </div>
 </div>

@@ -222,6 +222,8 @@ def _render_shell(request, projects=None, auto_open_create=False):
         "projects": projects,
         "model_names": services.get_available_models(),
         "default_system_prompt": services.get_system_prompt_template(),
+        "selector_prompt_hint": services.get_selector_prompt_hint(),
+        "trello_export_prompt_hint": services.get_trello_export_prompt_hint(),
     })
 
 

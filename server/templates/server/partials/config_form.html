@@ -169,7 +169,7 @@
           <label for="team-system-prompt">Selector Prompt</label>
           <textarea id="team-system-prompt"
                     name="team[system_prompt]"
-                    class="input input--textarea input--sm input--prompt"
+                    class="input input--textarea input--prompt"
                     rows="12"
                     placeholder="Paste the selector prompt…">{% if project.team.system_prompt %}{{ project.team.system_prompt }}{% else %}{{ selector_prompt_hint }}{% endif %}</textarea>
           <small class="form-hint">Use <code>{roles}</code>, <code>{history}</code>, <code>{participants}</code> placeholders.</small>
@@ -372,7 +372,7 @@
             <label for="trello-export-system-prompt">Extraction Prompt</label>
             <textarea id="trello-export-system-prompt"
                       name="integrations[trello][export_mapping][system_prompt]"
-                      class="input input--textarea input--sm input--prompt"
+                      class="input input--textarea input--prompt"
                       rows="10"
                       placeholder="Paste the extraction prompt…">{% if project.integrations.trello.export_mapping.system_prompt %}{{ project.integrations.trello.export_mapping.system_prompt }}{% else %}{{ trello_export_prompt_hint }}{% endif %}</textarea>
             <small class="form-hint">Prompt used by the extraction agent to parse the discussion into Trello cards.</small>
