@@ -107,7 +107,9 @@
         .then(function (res) {
           btn.disabled = false;
           if (res.ok && res.data.ok) {
-            var label = res.data.user ? (" (" + res.data.user + ")") : "";
+            var user = res.data.user || {};
+            var name = (typeof user === "object") ? (user.display_name || user.email_address || "") : String(user);
+            var label = name ? (" (" + name + ")") : "";
             setVerifyStatus(typeName, "Connected" + label, true);
             loadSpaces(typeName, projectId);
           } else {

@@ -457,10 +457,10 @@
               <div class="form-group">
                 <button type="button" class="btn btn--secondary btn--sm js-jira-verify js-requires-secret"
                         data-jira-type="software"
-                        {% if mode == 'create' %}disabled{% endif %}>
+                        {% if mode == 'create' or not project.integrations.jira.software.site_url %}disabled{% endif %}>
                   Test Connection
                 </button>
-                <span class="jira-verify-status" id="jira-software-verify-status"></span>
+                <span class="jira-verify-status" id="jira-software-verify-status">{% if mode == 'create' or not project.integrations.jira.software.site_url %}Save configuration first, then Test &amp; Continue.{% endif %}</span>
               </div>
               <div class="form-group">
                 <label for="jira-software-project-select">Default Project</label>
@@ -581,10 +581,10 @@
               <div class="form-group">
                 <button type="button" class="btn btn--secondary btn--sm js-jira-verify js-requires-secret"
                         data-jira-type="service_desk"
-                        {% if mode == 'create' %}disabled{% endif %}>
+                        {% if mode == 'create' or not project.integrations.jira.service_desk.site_url %}disabled{% endif %}>
                   Test Connection
                 </button>
-                <span class="jira-verify-status" id="jira-service-desk-verify-status"></span>
+                <span class="jira-verify-status" id="jira-service-desk-verify-status">{% if mode == 'create' or not project.integrations.jira.service_desk.site_url %}Save configuration first, then Test &amp; Continue.{% endif %}</span>
               </div>
               <div class="form-group">
                 <label for="jira-service-desk-project-select">Default Service Desk</label>
@@ -705,10 +705,10 @@
               <div class="form-group">
                 <button type="button" class="btn btn--secondary btn--sm js-jira-verify js-requires-secret"
                         data-jira-type="business"
-                        {% if mode == 'create' %}disabled{% endif %}>
+                        {% if mode == 'create' or not project.integrations.jira.business.site_url %}disabled{% endif %}>
                   Test Connection
                 </button>
-                <span class="jira-verify-status" id="jira-business-verify-status"></span>
+                <span class="jira-verify-status" id="jira-business-verify-status">{% if mode == 'create' or not project.integrations.jira.business.site_url %}Save configuration first, then Test &amp; Continue.{% endif %}</span>
               </div>
               <div class="form-group">
                 <label for="jira-business-project-select">Default Project</label>

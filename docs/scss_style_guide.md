@@ -53,6 +53,8 @@ This guide defines the mandatory styling contract for Product Discovery so new U
 4. **Nested sections must always have symmetric horizontal padding**: `padding-left` and `padding-right` must both be set. Omitting `padding-right` causes controls (especially textarea scrollbars) to clip at the parent section's right inner edge.
    - `.form-group--nested`: `padding-left: $space-md`, `padding-right: $space-sm`
    - `.form-group--nested-l2`: `padding-left: $space-md`, `padding-right: $space-sm`
+5. **Nesting levels must use identical `margin-left`**: both `.form-group--nested` (L1) and `.form-group--nested-l2` (L2) use `margin-left: $space-md` — do not increase indent at L2 (e.g. `$space-lg`) as it creates visual misalignment between Trello and Jira sub-type sections.
+6. **Do not add `margin-top` to nested fieldsets**: vertical rhythm between a checkbox row and the following nested fieldset, and between consecutive nested fieldsets, comes entirely from the preceding `.form-group`'s `margin-bottom` (resolved by `.config-form fieldset.form-group { margin-bottom: $space-md }`). Adding explicit `margin-top` on nested elements doubles the gap and creates inconsistency.
 
 ## Feature Scoping Rules
 
