@@ -13,6 +13,7 @@ Preserve a consistent visual language across Config, Home, and export modals.
 2. Color scheme: use shared SCSS tokens and existing button modifiers.
 3. Card/modal spacing: preserve established padding, border radius, and hierarchy rhythm.
 4. Typography: keep existing text scale and label hierarchy unless design system change is intentional.
+5. **Textarea hint text is mandatory**: every `<textarea>` in a config form must be followed by `<small class="form-hint">` with a plain-language description of the field's purpose. The hint must name the integration and type (e.g. "Prompt used by the extraction agent to parse the discussion into Jira Service Desk requests."). No textarea may be left without a hint.
 
 ## Export Modal Guardrails
 1. Keep baseline split layout and action order consistent across providers.
@@ -23,3 +24,4 @@ Preserve a consistent visual language across Config, Home, and export modals.
 1. Compare delete controls with chat list and agent card patterns.
 2. Confirm no hardcoded random colors; use variables.
 3. Confirm responsive behavior remains usable on mobile and desktop.
+4. Confirm every `<textarea>` in a config form has a `<small class="form-hint">` below it with a field-specific description.

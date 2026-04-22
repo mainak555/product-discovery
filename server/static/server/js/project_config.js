@@ -199,6 +199,7 @@ document.addEventListener("DOMContentLoaded", function () {
     var html = clone.firstElementChild.outerHTML.replace(/__IDX__/g, nextIdx);
 
     container.insertAdjacentHTML("beforeend", html);
+    reindexAgents();
     syncFormState();
   });
 

@@ -37,6 +37,7 @@ This guide defines the mandatory styling contract for Product Discovery so new U
 1. Use shared form classes (`.form-group`, `.form-row`, `.form-actions`, `.form-hint`, `.input`).
 2. Preserve label hierarchy (small label size, clear spacing).
 3. Keep focus states aligned with shared tokenized input styles.
+4. **Every `<textarea>` in config forms must be followed by a `<small class="form-hint">` tag** describing the field's purpose in plain language. The hint must be specific to the field's integration and type (e.g. "Prompt used by the extraction agent to parse the discussion into Jira Software issues."). This applies to all providers (Trello, Jira, future).
 
 ### Cards And Modals
 

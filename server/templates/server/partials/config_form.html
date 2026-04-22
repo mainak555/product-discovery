@@ -514,11 +514,12 @@
                           class="input input--textarea input--prompt"
                           rows="8"
                           placeholder="Paste the extraction prompt…">{% if project.integrations.jira.software.export_mapping.system_prompt %}{{ project.integrations.jira.software.export_mapping.system_prompt }}{% else %}{{ jira_export_prompt_hints.software }}{% endif %}</textarea>
+                <small class="form-hint">Prompt used by the extraction agent to parse the discussion into Jira Software issues.</small>
               </div>
             </div>
           </fieldset>
 
-          <!-- ---- Jira Service Desk ---- -->
+          <!-- ---- Jira Service Desk ---->
           <fieldset class="form-group form-group--nested form-group--nested-l2">
             <legend>Service Desk (ITSM)</legend>
 
@@ -637,11 +638,12 @@
                           class="input input--textarea input--prompt"
                           rows="8"
                           placeholder="Paste the extraction prompt…">{% if project.integrations.jira.service_desk.export_mapping.system_prompt %}{{ project.integrations.jira.service_desk.export_mapping.system_prompt }}{% else %}{{ jira_export_prompt_hints.service_desk }}{% endif %}</textarea>
+                <small class="form-hint">Prompt used by the extraction agent to parse the discussion into Jira Service Desk requests.</small>
               </div>
             </div>
           </fieldset>
 
-          <!-- ---- Jira Business ---- -->
+          <!-- ---- Jira Business ---->
           <fieldset class="form-group form-group--nested form-group--nested-l2">
             <legend>Business (Work Management)</legend>
 
@@ -760,6 +762,7 @@
                           class="input input--textarea input--prompt"
                           rows="8"
                           placeholder="Paste the extraction prompt…">{% if project.integrations.jira.business.export_mapping.system_prompt %}{{ project.integrations.jira.business.export_mapping.system_prompt }}{% else %}{{ jira_export_prompt_hints.business }}{% endif %}</textarea>
+                <small class="form-hint">Prompt used by the extraction agent to parse the discussion into Jira Business tasks.</small>
               </div>
             </div>
           </fieldset>
