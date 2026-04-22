@@ -4,6 +4,7 @@ from .model_catalog import get_agent_model_names
 
 TEAM_TYPES = ("round_robin", "selector")
 HUMAN_GATE_INTERACTION_MODES = ("approve_reject", "feedback")
+JIRA_TYPES = ("software", "service_desk", "business")
 
 
 def validate_agent(data):
@@ -180,7 +181,7 @@ def validate_chat_session(data):
     }
 
 
-def validate_export_mapping(data):
+def validate_export_mapping(data, provider_label="trello"):
     """Validate and clean an export_mapping sub-object."""
     if not isinstance(data, dict):
         data = {}
@@ -191,7 +192,7 @@ def validate_export_mapping(data):
     valid_models = get_agent_model_names()
     if model and model not in valid_models:
         raise ValueError(
-            f"'integrations.trello.export_mapping.model' '{model}' is not in the model catalog."
+            f"'export_mapping.model' '{model}' is not in the model catalog."
         )
 
     try:
@@ -203,12 +204,93 @@ def validate_export_mapping(data):
     return {"system_prompt": system_prompt, "model": model, "temperature": temperature}
 
 
+def validate_jira_type_config(raw_type, type_name, agent_names):
+    """Validate a single Jira type sub-config (software/service_desk/business)."""
+    if not isinstance(raw_type, dict):
+        return {"enabled": False}
+
+    type_enabled = bool(raw_type.get("enabled", False))
+    cfg = {"enabled": type_enabled}
+
+    if not type_enabled:
+        return cfg
+
+    site_url = (raw_type.get("site_url") or "").strip()
+    if not site_url:
+        raise ValueError(
+            f"'integrations.jira.{type_name}.site_url' is required when {type_name} is enabled."
+        )
+
+    email = (raw_type.get("email") or "").strip()
+    if not email:
+        raise ValueError(
+            f"'integrations.jira.{type_name}.email' is required when {type_name} is enabled."
+        )
+
+    api_key = (raw_type.get("api_key") or "").strip()
+    if not api_key:
+        raise ValueError(
+            f"'integrations.jira.{type_name}.api_key' is required when {type_name} is enabled."
+        )
+
+    # Per-type export_agents
+    raw_ea = raw_type.get("export_agents") or []
+    if isinstance(raw_ea, str):
+        raw_ea = [raw_ea] if raw_ea else []
+    export_agents = [n.strip() for n in raw_ea if isinstance(n, str) and n.strip()]
+    lower_names = [n.lower() for n in agent_names]
+    for ea in export_agents:
+        if ea.lower() not in lower_names:
+            raise ValueError(
+                f"'integrations.jira.{type_name}.export_agents' entry '{ea}' must match an existing agent name."
+            )
+
+    cfg["site_url"] = site_url
+    cfg["email"] = email
+    cfg["api_key"] = api_key
+    cfg["default_project_key"] = (raw_type.get("default_project_key") or "").strip()
+    cfg["default_project_name"] = (raw_type.get("default_project_name") or "").strip()
+    cfg["export_agents"] = export_agents
+    cfg["export_mapping"] = validate_export_mapping(raw_type.get("export_mapping") or {}, provider_label=f"jira.{type_name}")
+
+    return cfg
+
+
+def validate_jira_integration(raw_jira, agent_names):
+    """Validate and clean the full jira integration config."""
+    if not isinstance(raw_jira, dict):
+        return {"enabled": False}
+
+    jira_enabled = bool(raw_jira.get("enabled", False))
+    if not jira_enabled:
+        return {"enabled": False}
+
+    jira = {
+        "enabled": True,
+    }
+
+    any_type_enabled = False
+    for type_name in JIRA_TYPES:
+        raw_type = raw_jira.get(type_name) or {}
+        jira[type_name] = validate_jira_type_config(raw_type, type_name, agent_names)
+        if jira[type_name].get("enabled"):
+            any_type_enabled = True
+
+    if not any_type_enabled:
+        raise ValueError(
+            "At least one Jira project type (software, service_desk, business) must be enabled when Jira is enabled."
+        )
+
+    return jira
+
+
 def validate_integrations(data, agent_names):
     """Validate and clean the optional integrations configuration."""
     if not isinstance(data, dict):
         return {
             "enabled": False,
             "trello": {"enabled": False},
+            "jira": {"enabled": False},
         }
 
     enabled = bool(data.get("enabled", False))
@@ -217,6 +299,7 @@ def validate_integrations(data, agent_names):
         return {
             "enabled": False,
             "trello": {"enabled": False},
+            "jira": {"enabled": False},
         }
 
     # --- Trello ---
@@ -260,14 +343,20 @@ def validate_integrations(data, agent_names):
             raw_trello.get("export_mapping") or {}
         )
 
-    if enabled and not trello_enabled:
+    # --- Jira ---
+    raw_jira = data.get("jira") or {}
+    jira = validate_jira_integration(raw_jira, agent_names)
+
+    # At least one provider must be enabled
+    if not trello_enabled and not jira.get("enabled"):
         raise ValueError(
-            "Trello must be enabled when integrations are enabled."
+            "At least one export provider (Trello or Jira) must be enabled when integrations are enabled."
         )
 
     return {
         "enabled": enabled,
         "trello": trello,
+        "jira": jira,
     }
 
 

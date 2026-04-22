@@ -21,6 +21,7 @@ from .model_catalog import (
     default_system_prompt_hint,
     selector_prompt_hint as _get_selector_prompt_hint,
     trello_export_prompt_hint as _get_trello_export_prompt_hint,
+    jira_export_prompt_hint as _get_jira_export_prompt_hint,
 )
 from .schemas import validate_project, validate_chat_session
 
@@ -58,6 +59,11 @@ def get_selector_prompt_hint():
 def get_trello_export_prompt_hint():
     """Return the default Trello export system prompt template."""
     return _get_trello_export_prompt_hint()
+
+
+def get_jira_export_prompt_hint(type_name):
+    """Return the default Jira export system prompt for a given project type."""
+    return _get_jira_export_prompt_hint(type_name)
 
 
 SECRET_MASK = "••••••••"
@@ -196,8 +202,33 @@ def normalize_project(project):
         "trello": trello,
     }
 
+    # --- Jira ---
+    raw_jira = raw_integrations.get("jira") or {}
+    jira_enabled = bool(raw_jira.get("enabled", False))
+    jira = {"enabled": jira_enabled}
+    if jira_enabled:
+        for jira_type in ("software", "service_desk", "business"):
+            raw_type = raw_jira.get(jira_type) or {}
+            type_enabled = bool(raw_type.get("enabled", False))
+            type_cfg = {"enabled": type_enabled}
+            if type_enabled:
+                type_cfg["site_url"] = (raw_type.get("site_url") or "").strip()
+                type_cfg["email"] = (raw_type.get("email") or "").strip()
+                type_cfg["api_key"] = _mask_secret(raw_type.get("api_key"))
+                type_cfg["default_project_key"] = (raw_type.get("default_project_key") or "").strip()
+                type_cfg["default_project_name"] = (raw_type.get("default_project_name") or "").strip()
+                type_cfg["export_agents"] = _normalize_export_agents(raw_type, {})
+                raw_mapping = raw_type.get("export_mapping") or {}
+                type_cfg["export_mapping"] = {
+                    "system_prompt": (raw_mapping.get("system_prompt") or "").strip(),
+                    "model": (raw_mapping.get("model") or "").strip(),
+                    "temperature": _coerce_temperature(raw_mapping.get("temperature", 0.0)),
+                }
+            jira[jira_type] = type_cfg
+    integrations["jira"] = jira
+
     for provider_name in SUPPORTED_EXPORT_PROVIDERS:
-        if provider_name == "trello":
+        if provider_name in ("trello", "jira"):
             continue
         integrations[provider_name] = _normalize_provider_flags(raw_integrations, provider_name)
 
@@ -353,6 +384,17 @@ def _restore_masked_secrets(data, existing):
         # Preserve token_generated_at from DB when not explicitly set
         if not trello.get("token_generated_at"):
             trello["token_generated_at"] = existing_trello.get("token_generated_at", "")
+
+    # Jira secrets (per type)
+    jira = integrations.get("jira")
+    existing_jira = existing_integrations.get("jira") or {}
+    if isinstance(jira, dict):
+        for jira_type in ("software", "service_desk", "business"):
+            type_cfg = jira.get(jira_type)
+            existing_type = existing_jira.get(jira_type) or {}
+            if isinstance(type_cfg, dict):
+                if type_cfg.get("api_key") == SECRET_MASK:
+                    type_cfg["api_key"] = existing_type.get("api_key", "")
 
 
 def delete_project(project_id):

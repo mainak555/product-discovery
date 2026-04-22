@@ -266,6 +266,21 @@ select.input {
   }
 }
 
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $space-xs $space-md;
+
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: $space-xs;
+    font-weight: 400;
+    margin-bottom: 0;
+    cursor: pointer;
+  }
+}
+
 .form-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -2259,4 +2274,42 @@ select.input {
 .badge-error {
   background: #fef2f2;
   color: #991b1b;
+}
+
+// ---------------------------------------------------------------------------
+// Jira Config — Connection status & nested sub-sections
+// ---------------------------------------------------------------------------
+
+.jira-verify-status {
+  display: inline-block;
+  margin-left: $space-sm;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+
+  &--ok {
+    color: $color-success;
+    font-weight: 600;
+  }
+
+  &--err {
+    color: $color-error;
+    font-weight: 600;
+  }
+}
+
+.form-group--nested-l2 {
+  margin-left: $space-lg;
+  padding-left: $space-md;
+  border-left: 2px solid $color-border;
+  margin-top: $space-md;
+}
+
+.jira-type-badge {
+  display: inline-block;
+  padding: 2px $space-xs;
+  border-radius: $radius;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  background: lighten($color-primary, 40%);
+  color: $color-primary;
 }

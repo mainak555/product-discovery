@@ -41,4 +41,7 @@ urlpatterns = [
 
     # Trello integration
     path("trello/", include("server.trello_urls")),
+
+    # Jira integration
+    path("jira/", include("server.jira_urls")),
 ]
