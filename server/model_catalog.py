@@ -52,7 +52,13 @@ def load_agent_models() -> dict[str, dict]:
 
 def get_agent_model_names() -> list[str]:
     """Return supported model names sorted ascending for display."""
-    return sorted(load_agent_models().keys(), key=str.lower)
+    catalog = load_agent_models()
+    enabled_model_names = [
+        model_name
+        for model_name, metadata in catalog.items()
+        if not (isinstance(metadata, dict) and metadata.get("disabled") is True)
+    ]
+    return sorted(enabled_model_names, key=str.lower)
 
 
 def get_agent_model_metadata(model_name: str) -> dict:
