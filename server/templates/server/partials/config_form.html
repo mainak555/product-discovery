@@ -50,7 +50,7 @@
   <p class="form-hint form-hint--block">Enter the Secret Key in the header before saving. The key is sent as a request header and validated on the server.</p>
 
   <!-- ====== AGENTS ====== -->
-  <fieldset class="form-group agents-fieldset">
+  <fieldset class="form-group section-fieldset">
     <legend>Assistant Agents</legend>
 
     <div id="agents-container">
@@ -70,7 +70,7 @@
   </fieldset>
 
   <!-- ====== HUMAN GATE ====== -->
-  <fieldset class="form-group">
+  <fieldset class="form-group section-fieldset">
     <legend>Human Gate</legend>
 
     <div class="form-group form-group--inline">
@@ -110,7 +110,7 @@
   </fieldset>
 
   <!-- ====== TEAM ====== -->
-  <fieldset class="form-group">
+  <fieldset class="form-group section-fieldset">
     <legend>Team</legend>
 
     <div class="form-row">
@@ -169,7 +169,7 @@
           <label for="team-system-prompt">Selector Prompt</label>
           <textarea id="team-system-prompt"
                     name="team[system_prompt]"
-                    class="input input--textarea input--sm input--prompt"
+                    class="input input--textarea input--prompt"
                     rows="12"
                     placeholder="Paste the selector prompt…">{% if project.team.system_prompt %}{{ project.team.system_prompt }}{% else %}{{ selector_prompt_hint }}{% endif %}</textarea>
           <small class="form-hint">Use <code>{roles}</code>, <code>{history}</code>, <code>{participants}</code> placeholders.</small>
@@ -190,9 +190,12 @@
   </fieldset>
 
   <!-- ====== INTEGRATIONS ====== -->
-  <fieldset class="form-group">
+  <fieldset class="form-group section-fieldset">
     <legend>Integrations (Export)</legend>
 
+    {% if mode == 'create' %}
+      <p class="form-hint form-hint--info">Save the project first to configure export integrations (Trello, Jira).</p>
+    {% else %}
     <div class="form-group form-group--inline">
       <label>
         <input type="checkbox"
@@ -222,20 +225,16 @@
         <div id="integrations-trello-fields" {% if not project.integrations.trello.enabled %}hidden{% endif %}>
           <div class="form-group">
             <label>Export Agents</label>
-            <div id="integrations-export-agents">
-              {% if project.agents %}
-                {% for agent in project.agents %}
-                  <div class="form-group form-group--inline">
-                    <label>
-                      <input type="checkbox"
-                             name="integrations[trello][export_agents]"
-                             value="{{ agent.name }}"
-                             {% if agent.name in project.integrations.trello.export_agents %}checked{% endif %}>
-                      {{ agent.name }}
-                    </label>
-                  </div>
-                {% endfor %}
-              {% endif %}
+            <div class="checkbox-grid" id="integrations-export-agents">
+              {% for agent in project.agents %}
+                <label>
+                  <input type="checkbox"
+                         name="integrations[trello][export_agents]"
+                         value="{{ agent.name }}"
+                         {% if agent.name in project.integrations.trello.export_agents %}checked{% endif %}>
+                  {{ agent.name }}
+                </label>
+              {% endfor %}
             </div>
             <small class="form-hint">Checked agents show a Trello Export button. Leave all unchecked to show on every message.</small>
           </div>
@@ -372,7 +371,7 @@
             <label for="trello-export-system-prompt">Extraction Prompt</label>
             <textarea id="trello-export-system-prompt"
                       name="integrations[trello][export_mapping][system_prompt]"
-                      class="input input--textarea input--sm input--prompt"
+                      class="input input--textarea input--prompt"
                       rows="10"
                       placeholder="Paste the extraction prompt…">{% if project.integrations.trello.export_mapping.system_prompt %}{{ project.integrations.trello.export_mapping.system_prompt }}{% else %}{{ trello_export_prompt_hint }}{% endif %}</textarea>
             <small class="form-hint">Prompt used by the extraction agent to parse the discussion into Trello cards.</small>
@@ -380,7 +379,399 @@
         </div>
       </fieldset>
 
+      <!-- ---- Jira ---- -->
+      <fieldset class="form-group form-group--nested">
+        <legend>Jira</legend>
+
+        <div class="form-group form-group--inline">
+          <label>
+            <input type="checkbox"
+                   id="integrations-jira-enabled"
+                   name="integrations[jira][enabled]"
+                   {% if project.integrations.jira.enabled %}checked{% endif %}>
+            Enable Jira
+          </label>
+        </div>
+
+        <div id="integrations-jira-fields" {% if not project.integrations.jira.enabled %}hidden{% endif %}>
+
+          <!-- ---- Jira Software ---- -->
+          <fieldset class="form-group form-group--nested form-group--nested-l2">
+            <legend>Software (Scrum / Kanban)</legend>
+
+            <div class="form-group form-group--inline">
+              <label>
+                <input type="checkbox"
+                       id="jira-software-enabled"
+                       name="integrations[jira][software][enabled]"
+                       {% if project.integrations.jira.software.enabled %}checked{% endif %}>
+                Enable Jira Software
+              </label>
+            </div>
+
+            <div id="jira-software-fields" {% if not project.integrations.jira.software.enabled %}hidden{% endif %}>
+              <div class="form-group">
+                <label>Export Agents</label>
+                <div class="checkbox-grid">
+                  {% for agent in project.agents %}
+                    <label>
+                      <input type="checkbox"
+                             name="integrations[jira][software][export_agents]"
+                             value="{{ agent.name }}"
+                             {% if agent.name in project.integrations.jira.software.export_agents %}checked{% endif %}>
+                      {{ agent.name }}
+                    </label>
+                  {% endfor %}
+                </div>
+                <small class="form-hint">Checked agents show a Jira Software export button. Leave all unchecked to show on every message.</small>
+              </div>
+              <div class="form-group">
+                <label for="jira-software-site-url">Jira Site URL</label>
+                <input type="url"
+                       id="jira-software-site-url"
+                       name="integrations[jira][software][site_url]"
+                       class="input input--sm"
+                       value="{{ project.integrations.jira.software.site_url|default:'' }}"
+                       placeholder="https://yoursite.atlassian.net">
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="jira-software-email">Atlassian Email</label>
+                  <input type="email"
+                         id="jira-software-email"
+                         name="integrations[jira][software][email]"
+                         class="input input--sm"
+                         value="{{ project.integrations.jira.software.email|default:'' }}"
+                         placeholder="you@example.com">
+                </div>
+                <div class="form-group">
+                  <label for="jira-software-api-key">API Token</label>
+                  <input type="password"
+                         id="jira-software-api-key"
+                         name="integrations[jira][software][api_key]"
+                         class="input input--sm"
+                         value="{{ project.integrations.jira.software.api_key|default:'' }}"
+                         placeholder="Paste Atlassian API token">
+                </div>
+              </div>
+              <div class="form-group">
+                <button type="button" class="btn btn--secondary btn--sm js-jira-verify js-requires-secret"
+                        data-jira-type="software"
+                        {% if mode == 'create' or not project.integrations.jira.software.site_url %}disabled{% endif %}>
+                  Test Connection
+                </button>
+                <span class="jira-verify-status" id="jira-software-verify-status">{% if mode == 'create' or not project.integrations.jira.software.site_url %}Save configuration first, then Test &amp; Continue.{% endif %}</span>
+              </div>
+              <div class="form-group">
+                <label for="jira-software-project-select">Default Project</label>
+                <select id="jira-software-project-select"
+                        class="input input--sm js-jira-spaces-select"
+                        data-jira-type="software">
+                  <option value="">— Select project —</option>
+                  {% if project.integrations.jira.software.default_project_key %}
+                    <option value="{{ project.integrations.jira.software.default_project_key }}"
+                            data-name="{{ project.integrations.jira.software.default_project_name }}"
+                            selected>
+                      {{ project.integrations.jira.software.default_project_name|default:project.integrations.jira.software.default_project_key }}
+                    </option>
+                  {% endif %}
+                </select>
+                <input type="hidden" name="integrations[jira][software][default_project_key]"
+                       id="jira-software-default-project-key"
+                       value="{{ project.integrations.jira.software.default_project_key|default:'' }}">
+                <input type="hidden" name="integrations[jira][software][default_project_name]"
+                       id="jira-software-default-project-name"
+                       value="{{ project.integrations.jira.software.default_project_name|default:'' }}">
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="jira-software-export-model">Extraction Model</label>
+                  <select id="jira-software-export-model"
+                          name="integrations[jira][software][export_mapping][model]"
+                          class="input input--sm">
+                    {% for model_name in model_names %}
+                      <option value="{{ model_name }}"
+                              {% if project.integrations.jira.software.export_mapping.model == model_name %}selected{% endif %}>
+                        {{ model_name }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="jira-software-export-temperature">Temperature</label>
+                  <input type="number"
+                         id="jira-software-export-temperature"
+                         name="integrations[jira][software][export_mapping][temperature]"
+                         class="input input--sm"
+                         value="{{ project.integrations.jira.software.export_mapping.temperature|default:'0.0' }}"
+                         step="0.1" min="0" max="2">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="jira-software-export-prompt">Extraction Prompt</label>
+                <textarea id="jira-software-export-prompt"
+                          name="integrations[jira][software][export_mapping][system_prompt]"
+                          class="input input--textarea input--prompt"
+                          rows="8"
+                          placeholder="Paste the extraction prompt…">{% if project.integrations.jira.software.export_mapping.system_prompt %}{{ project.integrations.jira.software.export_mapping.system_prompt }}{% else %}{{ jira_export_prompt_hints.software }}{% endif %}</textarea>
+                <small class="form-hint">Prompt used by the extraction agent to parse the discussion into Jira Software issues.</small>
+              </div>
+            </div>
+          </fieldset>
+
+          <!-- ---- Jira Service Desk ---->
+          <fieldset class="form-group form-group--nested form-group--nested-l2">
+            <legend>Service Desk (ITSM)</legend>
+
+            <div class="form-group form-group--inline">
+              <label>
+                <input type="checkbox"
+                       id="jira-service-desk-enabled"
+                       name="integrations[jira][service_desk][enabled]"
+                       {% if project.integrations.jira.service_desk.enabled %}checked{% endif %}>
+                Enable Jira Service Desk
+              </label>
+            </div>
+
+            <div id="jira-service-desk-fields" {% if not project.integrations.jira.service_desk.enabled %}hidden{% endif %}>
+              <div class="form-group">
+                <label>Export Agents</label>
+                <div class="checkbox-grid">
+                  {% for agent in project.agents %}
+                    <label>
+                      <input type="checkbox"
+                             name="integrations[jira][service_desk][export_agents]"
+                             value="{{ agent.name }}"
+                             {% if agent.name in project.integrations.jira.service_desk.export_agents %}checked{% endif %}>
+                      {{ agent.name }}
+                    </label>
+                  {% endfor %}
+                </div>
+                <small class="form-hint">Checked agents show a Jira Service Desk export button. Leave all unchecked to show on every message.</small>
+              </div>
+              <div class="form-group">
+                <label for="jira-service-desk-site-url">Jira Site URL</label>
+                <input type="url"
+                       id="jira-service-desk-site-url"
+                       name="integrations[jira][service_desk][site_url]"
+                       class="input input--sm"
+                       value="{{ project.integrations.jira.service_desk.site_url|default:'' }}"
+                       placeholder="https://yoursite.atlassian.net">
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="jira-service-desk-email">Atlassian Email</label>
+                  <input type="email"
+                         id="jira-service-desk-email"
+                         name="integrations[jira][service_desk][email]"
+                         class="input input--sm"
+                         value="{{ project.integrations.jira.service_desk.email|default:'' }}"
+                         placeholder="you@example.com">
+                </div>
+                <div class="form-group">
+                  <label for="jira-service-desk-api-key">API Token</label>
+                  <input type="password"
+                         id="jira-service-desk-api-key"
+                         name="integrations[jira][service_desk][api_key]"
+                         class="input input--sm"
+                         value="{{ project.integrations.jira.service_desk.api_key|default:'' }}"
+                         placeholder="Paste Atlassian API token">
+                </div>
+              </div>
+              <div class="form-group">
+                <button type="button" class="btn btn--secondary btn--sm js-jira-verify js-requires-secret"
+                        data-jira-type="service_desk"
+                        {% if mode == 'create' or not project.integrations.jira.service_desk.site_url %}disabled{% endif %}>
+                  Test Connection
+                </button>
+                <span class="jira-verify-status" id="jira-service-desk-verify-status">{% if mode == 'create' or not project.integrations.jira.service_desk.site_url %}Save configuration first, then Test &amp; Continue.{% endif %}</span>
+              </div>
+              <div class="form-group">
+                <label for="jira-service-desk-project-select">Default Service Desk</label>
+                <select id="jira-service-desk-project-select"
+                        class="input input--sm js-jira-spaces-select"
+                        data-jira-type="service_desk">
+                  <option value="">— Select service desk —</option>
+                  {% if project.integrations.jira.service_desk.default_project_key %}
+                    <option value="{{ project.integrations.jira.service_desk.default_project_key }}"
+                            data-name="{{ project.integrations.jira.service_desk.default_project_name }}"
+                            selected>
+                      {{ project.integrations.jira.service_desk.default_project_name|default:project.integrations.jira.service_desk.default_project_key }}
+                    </option>
+                  {% endif %}
+                </select>
+                <input type="hidden" name="integrations[jira][service_desk][default_project_key]"
+                       id="jira-service-desk-default-project-key"
+                       value="{{ project.integrations.jira.service_desk.default_project_key|default:'' }}">
+                <input type="hidden" name="integrations[jira][service_desk][default_project_name]"
+                       id="jira-service-desk-default-project-name"
+                       value="{{ project.integrations.jira.service_desk.default_project_name|default:'' }}">
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="jira-service-desk-export-model">Extraction Model</label>
+                  <select id="jira-service-desk-export-model"
+                          name="integrations[jira][service_desk][export_mapping][model]"
+                          class="input input--sm">
+                    {% for model_name in model_names %}
+                      <option value="{{ model_name }}"
+                              {% if project.integrations.jira.service_desk.export_mapping.model == model_name %}selected{% endif %}>
+                        {{ model_name }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="jira-service-desk-export-temperature">Temperature</label>
+                  <input type="number"
+                         id="jira-service-desk-export-temperature"
+                         name="integrations[jira][service_desk][export_mapping][temperature]"
+                         class="input input--sm"
+                         value="{{ project.integrations.jira.service_desk.export_mapping.temperature|default:'0.0' }}"
+                         step="0.1" min="0" max="2">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="jira-service-desk-export-prompt">Extraction Prompt</label>
+                <textarea id="jira-service-desk-export-prompt"
+                          name="integrations[jira][service_desk][export_mapping][system_prompt]"
+                          class="input input--textarea input--prompt"
+                          rows="8"
+                          placeholder="Paste the extraction prompt…">{% if project.integrations.jira.service_desk.export_mapping.system_prompt %}{{ project.integrations.jira.service_desk.export_mapping.system_prompt }}{% else %}{{ jira_export_prompt_hints.service_desk }}{% endif %}</textarea>
+                <small class="form-hint">Prompt used by the extraction agent to parse the discussion into Jira Service Desk requests.</small>
+              </div>
+            </div>
+          </fieldset>
+
+          <!-- ---- Jira Business ---->
+          <fieldset class="form-group form-group--nested form-group--nested-l2">
+            <legend>Business (Work Management)</legend>
+
+            <div class="form-group form-group--inline">
+              <label>
+                <input type="checkbox"
+                       id="jira-business-enabled"
+                       name="integrations[jira][business][enabled]"
+                       {% if project.integrations.jira.business.enabled %}checked{% endif %}>
+                Enable Jira Business
+              </label>
+            </div>
+
+            <div id="jira-business-fields" {% if not project.integrations.jira.business.enabled %}hidden{% endif %}>
+              <div class="form-group">
+                <label>Export Agents</label>
+                <div class="checkbox-grid">
+                  {% for agent in project.agents %}
+                    <label>
+                      <input type="checkbox"
+                             name="integrations[jira][business][export_agents]"
+                             value="{{ agent.name }}"
+                             {% if agent.name in project.integrations.jira.business.export_agents %}checked{% endif %}>
+                      {{ agent.name }}
+                    </label>
+                  {% endfor %}
+                </div>
+                <small class="form-hint">Checked agents show a Jira Business export button. Leave all unchecked to show on every message.</small>
+              </div>
+              <div class="form-group">
+                <label for="jira-business-site-url">Jira Site URL</label>
+                <input type="url"
+                       id="jira-business-site-url"
+                       name="integrations[jira][business][site_url]"
+                       class="input input--sm"
+                       value="{{ project.integrations.jira.business.site_url|default:'' }}"
+                       placeholder="https://yoursite.atlassian.net">
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="jira-business-email">Atlassian Email</label>
+                  <input type="email"
+                         id="jira-business-email"
+                         name="integrations[jira][business][email]"
+                         class="input input--sm"
+                         value="{{ project.integrations.jira.business.email|default:'' }}"
+                         placeholder="you@example.com">
+                </div>
+                <div class="form-group">
+                  <label for="jira-business-api-key">API Token</label>
+                  <input type="password"
+                         id="jira-business-api-key"
+                         name="integrations[jira][business][api_key]"
+                         class="input input--sm"
+                         value="{{ project.integrations.jira.business.api_key|default:'' }}"
+                         placeholder="Paste Atlassian API token">
+                </div>
+              </div>
+              <div class="form-group">
+                <button type="button" class="btn btn--secondary btn--sm js-jira-verify js-requires-secret"
+                        data-jira-type="business"
+                        {% if mode == 'create' or not project.integrations.jira.business.site_url %}disabled{% endif %}>
+                  Test Connection
+                </button>
+                <span class="jira-verify-status" id="jira-business-verify-status">{% if mode == 'create' or not project.integrations.jira.business.site_url %}Save configuration first, then Test &amp; Continue.{% endif %}</span>
+              </div>
+              <div class="form-group">
+                <label for="jira-business-project-select">Default Project</label>
+                <select id="jira-business-project-select"
+                        class="input input--sm js-jira-spaces-select"
+                        data-jira-type="business">
+                  <option value="">— Select project —</option>
+                  {% if project.integrations.jira.business.default_project_key %}
+                    <option value="{{ project.integrations.jira.business.default_project_key }}"
+                            data-name="{{ project.integrations.jira.business.default_project_name }}"
+                            selected>
+                      {{ project.integrations.jira.business.default_project_name|default:project.integrations.jira.business.default_project_key }}
+                    </option>
+                  {% endif %}
+                </select>
+                <input type="hidden" name="integrations[jira][business][default_project_key]"
+                       id="jira-business-default-project-key"
+                       value="{{ project.integrations.jira.business.default_project_key|default:'' }}">
+                <input type="hidden" name="integrations[jira][business][default_project_name]"
+                       id="jira-business-default-project-name"
+                       value="{{ project.integrations.jira.business.default_project_name|default:'' }}">
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="jira-business-export-model">Extraction Model</label>
+                  <select id="jira-business-export-model"
+                          name="integrations[jira][business][export_mapping][model]"
+                          class="input input--sm">
+                    {% for model_name in model_names %}
+                      <option value="{{ model_name }}"
+                              {% if project.integrations.jira.business.export_mapping.model == model_name %}selected{% endif %}>
+                        {{ model_name }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="jira-business-export-temperature">Temperature</label>
+                  <input type="number"
+                         id="jira-business-export-temperature"
+                         name="integrations[jira][business][export_mapping][temperature]"
+                         class="input input--sm"
+                         value="{{ project.integrations.jira.business.export_mapping.temperature|default:'0.0' }}"
+                         step="0.1" min="0" max="2">
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="jira-business-export-prompt">Extraction Prompt</label>
+                <textarea id="jira-business-export-prompt"
+                          name="integrations[jira][business][export_mapping][system_prompt]"
+                          class="input input--textarea input--prompt"
+                          rows="8"
+                          placeholder="Paste the extraction prompt…">{% if project.integrations.jira.business.export_mapping.system_prompt %}{{ project.integrations.jira.business.export_mapping.system_prompt }}{% else %}{{ jira_export_prompt_hints.business }}{% endif %}</textarea>
+                <small class="form-hint">Prompt used by the extraction agent to parse the discussion into Jira Business tasks.</small>
+              </div>
+            </div>
+          </fieldset>
+
+        </div>
+      </fieldset>
+
     </div>
+    {% endif %}
   </fieldset>
 
   <!-- Submit / Clear / Clone -->

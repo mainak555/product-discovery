@@ -25,6 +25,9 @@ SUPPORTED_EXPORT_PROVIDERS = ("trello", "jira", "pdf", "n8n")
 EXPORT_PROVIDER_LABELS = {
     "trello": "Trello",
     "jira": "Jira",
+    "jira_software": "Jira Software",
+    "jira_service_desk": "Jira Service Desk",
+    "jira_business": "Jira Business",
     "pdf": "PDF",
     "n8n": "n8n",
 }
@@ -49,6 +52,11 @@ def _get_form_context(project=None, mode="create", success=None):
         "default_system_prompt": services.get_system_prompt_template(),
         "selector_prompt_hint": services.get_selector_prompt_hint(),
         "trello_export_prompt_hint": services.get_trello_export_prompt_hint(),
+        "jira_export_prompt_hints": {
+            "software": services.get_jira_export_prompt_hint("software"),
+            "service_desk": services.get_jira_export_prompt_hint("service_desk"),
+            "business": services.get_jira_export_prompt_hint("business"),
+        },
     }
     if success:
         context["success"] = success
@@ -106,10 +114,32 @@ def _build_project_data(post_data, existing_project=None):
         },
     }
 
+    # --- Jira ---
+    jira_enabled = post_data.get("integrations[jira][enabled]") == "on"
+    jira = {"enabled": jira_enabled}
+    for jira_type in ("software", "service_desk", "business"):
+        pfx = f"integrations[jira][{jira_type}]"
+        type_enabled = post_data.get(f"{pfx}[enabled]") == "on"
+        jira[jira_type] = {
+            "enabled": type_enabled,
+            "site_url": post_data.get(f"{pfx}[site_url]", "").strip(),
+            "email": post_data.get(f"{pfx}[email]", "").strip(),
+            "api_key": post_data.get(f"{pfx}[api_key]", "").strip(),
+            "default_project_key": post_data.get(f"{pfx}[default_project_key]", "").strip(),
+            "default_project_name": post_data.get(f"{pfx}[default_project_name]", "").strip(),
+            "export_agents": [n.strip() for n in post_data.getlist(f"{pfx}[export_agents]") if n.strip()],
+            "export_mapping": {
+                "system_prompt": post_data.get(f"{pfx}[export_mapping][system_prompt]", "").strip(),
+                "model": post_data.get(f"{pfx}[export_mapping][model]", "").strip(),
+                "temperature": post_data.get(f"{pfx}[export_mapping][temperature]", "0.0").strip(),
+            },
+        }
+    integrations["jira"] = jira
+
     if isinstance(existing_project, dict):
         existing_integrations = existing_project.get("integrations") or {}
         for provider_name in SUPPORTED_EXPORT_PROVIDERS:
-            if provider_name == "trello":
+            if provider_name in ("trello", "jira"):
                 continue
             provider_cfg = existing_integrations.get(provider_name)
             if isinstance(provider_cfg, dict):
@@ -158,6 +188,20 @@ def _build_export_meta(project):
     for provider_name in SUPPORTED_EXPORT_PROVIDERS:
         provider_cfg = integrations.get(provider_name)
         if not isinstance(provider_cfg, dict) or not provider_cfg.get("enabled", False):
+            continue
+
+        if provider_name == "jira":
+            # Emit one entry per enabled Jira sub-type, each with its own export_agents
+            for jira_type in ("software", "service_desk", "business"):
+                type_cfg = provider_cfg.get(jira_type) or {}
+                if not type_cfg.get("enabled", False):
+                    continue
+                sub_key = f"jira_{jira_type}"
+                providers.append({
+                    "name": sub_key,
+                    "label": EXPORT_PROVIDER_LABELS.get(sub_key, sub_key.replace("_", " ").title()),
+                    "export_agents": _normalize_export_agents(type_cfg.get("export_agents")),
+                })
             continue
 
         providers.append({
@@ -222,6 +266,8 @@ def _render_shell(request, projects=None, auto_open_create=False):
         "projects": projects,
         "model_names": services.get_available_models(),
         "default_system_prompt": services.get_system_prompt_template(),
+        "selector_prompt_hint": services.get_selector_prompt_hint(),
+        "trello_export_prompt_hint": services.get_trello_export_prompt_hint(),
     })
 
 

@@ -56,6 +56,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "server.middleware.RequestIdMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -125,3 +126,54 @@ COMPRESS_PRECOMPILERS = (
 )
 COMPRESS_ENABLED = True
 COMPRESS_OFFLINE = not DEBUG
+
+# ---------------------------------------------------------------------------
+# Logging — JSON-structured stderr; request-id propagation; per-package levels
+# ---------------------------------------------------------------------------
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "request_id": {
+            "()": "server.logging_utils.RequestIdFilter",
+        },
+        "trace_context": {
+            "()": "server.logging_utils.TraceContextFilter",
+        },
+        "event_only": {
+            "()": "server.logging_utils.EventOnlyConsoleFilter",
+        },
+    },
+    "formatters": {
+        "json": {
+            "()": "server.logging_utils.JsonFormatter",
+            "format": "%(timestamp)s %(level)s %(logger)s %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "json",
+            "filters": ["request_id", "trace_context", "event_only"],
+        },
+    },
+    "loggers": {
+        "server": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
+        "agents": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
+        # NOTE: `autogen_core.events` and `autogen_agentchat.events` are
+        # intentionally NOT listed here. `agents.tracing._install_autogen_event_bridge`
+        # owns those loggers — it strips the shared `console` handler and
+        # attaches the span-bridge handler instead. INFO payload events flow
+        # to spans (with redaction + truncation), never to console.
+        "autogen_core": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        "autogen_agentchat": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        "django.request": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        "django.server": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        "pymongo": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        "urllib3": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+        "httpx": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+    },
+    "root": {"handlers": ["console"], "level": LOG_LEVEL},
+}

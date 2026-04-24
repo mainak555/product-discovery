@@ -37,12 +37,24 @@ This guide defines the mandatory styling contract for Product Discovery so new U
 1. Use shared form classes (`.form-group`, `.form-row`, `.form-actions`, `.form-hint`, `.input`).
 2. Preserve label hierarchy (small label size, clear spacing).
 3. Keep focus states aligned with shared tokenized input styles.
+4. **Every `<textarea>` in config forms must be followed by a `<small class="form-hint">` tag** describing the field's purpose in plain language. The hint must be specific to the field's integration and type (e.g. "Prompt used by the extraction agent to parse the discussion into Jira Software issues."). This applies to all providers (Trello, Jira, future).
 
 ### Cards And Modals
 
 1. Preserve shared card/modal spacing rhythm from `main.scss`.
 2. Keep border, radius, and typography aligned with existing patterns.
 3. Provider-specific accents are additive only; baseline control semantics are unchanged.
+
+### Section Fieldsets (Config Form)
+
+1. All top-level config form sections (Assistant Agents, Human Gate, Team, Integrations) must use the shared `.section-fieldset` class.
+2. `.section-fieldset` provides: `border: 1px solid $color-border`, `border-radius: $radius-lg`, `padding: $space-md` (inside `.config-form`).
+3. Nested sub-sections within Integrations use `.form-group--nested` (left-border indent, L1) and `.form-group--nested-l2` (L2) — do not apply `.section-fieldset` to nested elements.
+4. **Nested sections must always have symmetric horizontal padding**: `padding-left` and `padding-right` must both be set. Omitting `padding-right` causes controls (especially textarea scrollbars) to clip at the parent section's right inner edge.
+   - `.form-group--nested`: `padding-left: $space-md`, `padding-right: $space-sm`
+   - `.form-group--nested-l2`: `padding-left: $space-md`, `padding-right: $space-sm`
+5. **Nesting levels must use identical `margin-left`**: both `.form-group--nested` (L1) and `.form-group--nested-l2` (L2) use `margin-left: $space-md` — do not increase indent at L2 (e.g. `$space-lg`) as it creates visual misalignment between Trello and Jira sub-type sections.
+6. **Do not add `margin-top` to nested fieldsets**: vertical rhythm between a checkbox row and the following nested fieldset, and between consecutive nested fieldsets, comes entirely from the preceding `.form-group`'s `margin-bottom` (resolved by `.config-form fieldset.form-group { margin-bottom: $space-md }`). Adding explicit `margin-top` on nested elements doubles the gap and creates inconsistency.
 
 ## Feature Scoping Rules
 
@@ -70,3 +82,4 @@ This guide defines the mandatory styling contract for Product Discovery so new U
 4. Buttons/forms/cards reuse shared classes and modifiers.
 5. Feature scope is isolated; shared files stay provider-agnostic.
 6. Desktop and mobile visual checks completed.
+7. Nested sections (`.form-group--nested`, `.form-group--nested-l2`) have both `padding-left` AND `padding-right` set — missing right padding causes controls to clip at the section edge.

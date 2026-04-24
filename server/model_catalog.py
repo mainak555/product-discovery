@@ -52,7 +52,13 @@ def load_agent_models() -> dict[str, dict]:
 
 def get_agent_model_names() -> list[str]:
     """Return supported model names sorted ascending for display."""
-    return sorted(load_agent_models().keys(), key=str.lower)
+    catalog = load_agent_models()
+    enabled_model_names = [
+        model_name
+        for model_name, metadata in catalog.items()
+        if not (isinstance(metadata, dict) and metadata.get("disabled") is True)
+    ]
+    return sorted(enabled_model_names, key=str.lower)
 
 
 def get_agent_model_metadata(model_name: str) -> dict:
@@ -264,3 +270,190 @@ PROCESS THE INPUT AND RETURN ONLY A JSON ARRAY."""
 def trello_export_prompt_hint() -> str:
     """Return the default Trello export system prompt template."""
     return TRELLO_EXPORT_SYSTEM_PROMPT
+
+
+# ---------------------------------------------------------------------------
+# Jira extraction prompts (per project type)
+# ---------------------------------------------------------------------------
+
+JIRA_SOFTWARE_EXPORT_PROMPT = """You are an expert Agile Delivery Analyst. Transform the input (discussion, requirement doc, or notes) into a HIERARCHICAL set of Jira Software issues ready for import. The hierarchy is FLUID — match the depth of the source. Do NOT invent parent levels that the source does not justify.
+
+OUTPUT FORMAT
+Return ONLY a valid JSON array. No markdown. No commentary. No preamble. List roots first, then each root's descendants depth-first.
+
+JSON SCHEMA (per issue)
+[
+  {
+    "temp_id": "string (short stable id unique within this array, e.g. E1, F1, S1, T1, ST1, B1)",
+    "parent_temp_id": "string|null (temp_id of the parent in this same array, or null for roots)",
+    "issue_type": "Epic|Feature|Story|Task|Sub-task|Bug",
+    "summary": "string (concise issue title, under 150 chars)",
+    "description": "string (full context, business intent, success criteria)",
+    "priority": "Highest|High|Medium|Low|Lowest",
+    "labels": ["string"],
+    "story_points": 0,
+    "components": ["string"],
+    "acceptance_criteria": "string (bullet-point acceptance criteria)",
+    "confidence_score": 0.0
+  }
+]
+
+ROOT SELECTION (READ CAREFULLY)
+- The root level is determined by the SCOPE OF THE SOURCE, not by a fixed template.
+- If the source describes a strategic objective / OKR / multi-quarter initiative -> root is an Epic.
+- If the source describes a single capability under an existing initiative -> root is a Feature.
+- If the source describes a single user-facing behavior or user story -> root is a Story.
+- If the source is a focused implementation request with no user narrative -> root is a Task.
+- If the source is a bug report -> root is a Bug.
+- A batch may contain MULTIPLE INDEPENDENT ROOTS at DIFFERENT LEVELS (e.g. one Epic root and one standalone Bug root). That is correct.
+- NEVER fabricate a parent Epic just because "everything should roll up to one". Roots are roots.
+
+ALLOWED PARENT -> CHILD RELATIONSHIPS
+| Parent      | Allowed child types                  |
+|-------------|--------------------------------------|
+| (root)      | Epic, Feature, Story, Task, Bug      |
+| Epic        | Feature, Story, Task, Bug            |
+| Feature     | Story, Task, Bug                     |
+| Story       | Task, Sub-task, Bug                  |
+| Task        | Sub-task, Bug                        |
+| Sub-task    | (none — Sub-task is always a leaf)   |
+| Bug         | (none — Bug is always a leaf)        |
+
+HARD RULES
+1. A Sub-task MUST have a parent of type Task or Story. A Sub-task is never a root.
+2. A Bug MAY be a root OR a child of any Feature/Story/Task it relates to. Bug is always a leaf.
+3. A child's level must be deeper than its parent's level (use the table above). Never produce inversions like Story -> Epic.
+4. Every parent_temp_id MUST reference a temp_id that already appears EARLIER in the array.
+5. Do not duplicate the same real-world item at two levels (e.g. an Epic and a Story with the same summary).
+6. If the source contains exactly ONE deliverable, emit ONE issue at the matching level — do not wrap it in a parent.
+
+TEMP_ID NAMING
+Use short prefixed ids that make the tree readable: E1, E2 ... for Epics; F1, F2 ... Features; S1, S2 ... Stories; T1, T2 ... Tasks; ST1, ST2 ... Sub-tasks; B1, B2 ... Bugs. Ids must be UNIQUE within the array.
+
+EXTRACTION RULES
+1. story_points: 1=trivial, 3=small, 5=medium, 8=large, 13=very large. Use null for Epic/Feature or when unclear.
+2. acceptance_criteria: bullet points; only include criteria the source explicitly states or strongly implies.
+3. components: infer functional area (e.g. "Authentication", "Payments"). Empty list if unclear.
+4. priority: Critical/blocking -> Highest; core value -> High; standard -> Medium; optional -> Low.
+5. confidence_score: 0.0-1.0 reflecting how explicitly the source defines this issue.
+6. No hallucinations — extract only what the source supports.
+
+EXAMPLES (each example is INDEPENDENT — pick the shape that matches your input)
+
+Example A — Epic with mixed depth (one branch goes deep, another stays shallow):
+[
+  {"temp_id":"E1","parent_temp_id":null,"issue_type":"Epic","summary":"Student Engagement Platform","description":"...","priority":"High","labels":[],"story_points":null,"components":[],"acceptance_criteria":"","confidence_score":0.9},
+  {"temp_id":"F1","parent_temp_id":"E1","issue_type":"Feature","summary":"Notice Board","description":"...","priority":"High","labels":[],"story_points":null,"components":["Notices"],"acceptance_criteria":"","confidence_score":0.85},
+  {"temp_id":"S1","parent_temp_id":"F1","issue_type":"Story","summary":"Teacher publishes a notice","description":"...","priority":"Medium","labels":[],"story_points":5,"components":["Notices"],"acceptance_criteria":"- form validates\\n- notice appears in feed","confidence_score":0.8},
+  {"temp_id":"T1","parent_temp_id":"S1","issue_type":"Task","summary":"Notice CRUD API","description":"...","priority":"Medium","labels":[],"story_points":3,"components":["Backend"],"acceptance_criteria":"","confidence_score":0.75},
+  {"temp_id":"ST1","parent_temp_id":"T1","issue_type":"Sub-task","summary":"Add rich-text editor","description":"...","priority":"Low","labels":[],"story_points":2,"components":["Frontend"],"acceptance_criteria":"","confidence_score":0.7},
+  {"temp_id":"T2","parent_temp_id":"E1","issue_type":"Task","summary":"Set up CI pipeline","description":"...","priority":"Medium","labels":["devops"],"story_points":3,"components":["DevOps"],"acceptance_criteria":"","confidence_score":0.8}
+]
+
+Example B — Feature root (no Epic in scope), with Sub-tasks under a Task:
+[
+  {"temp_id":"F1","parent_temp_id":null,"issue_type":"Feature","summary":"Inline comments on PRs","description":"...","priority":"High","labels":[],"story_points":null,"components":["Reviews"],"acceptance_criteria":"","confidence_score":0.85},
+  {"temp_id":"T1","parent_temp_id":"F1","issue_type":"Task","summary":"Comment thread persistence","description":"...","priority":"High","labels":[],"story_points":5,"components":["Backend"],"acceptance_criteria":"","confidence_score":0.8},
+  {"temp_id":"ST1","parent_temp_id":"T1","issue_type":"Sub-task","summary":"DB schema for threads","description":"...","priority":"Medium","labels":[],"story_points":2,"components":["Backend"],"acceptance_criteria":"","confidence_score":0.8},
+  {"temp_id":"ST2","parent_temp_id":"T1","issue_type":"Sub-task","summary":"REST endpoints","description":"...","priority":"Medium","labels":[],"story_points":3,"components":["Backend"],"acceptance_criteria":"","confidence_score":0.8},
+  {"temp_id":"B1","parent_temp_id":"F1","issue_type":"Bug","summary":"Long threads truncate at 32 entries","description":"...","priority":"High","labels":["bug"],"story_points":2,"components":["Reviews"],"acceptance_criteria":"","confidence_score":0.8}
+]
+
+Example C — Story root, single Sub-task (small focused request):
+[
+  {"temp_id":"S1","parent_temp_id":null,"issue_type":"Story","summary":"As an admin I can export users to CSV","description":"...","priority":"Medium","labels":[],"story_points":5,"components":["Admin"],"acceptance_criteria":"- CSV includes id, email, role\\n- export limited to 50k rows","confidence_score":0.85},
+  {"temp_id":"ST1","parent_temp_id":"S1","issue_type":"Sub-task","summary":"Add export button to admin page","description":"...","priority":"Medium","labels":[],"story_points":2,"components":["Frontend"],"acceptance_criteria":"","confidence_score":0.8}
+]
+
+Example D — Standalone Bug root (no parent context in source):
+[
+  {"temp_id":"B1","parent_temp_id":null,"issue_type":"Bug","summary":"Login fails for SSO users on Safari 17","description":"...","priority":"Highest","labels":["bug","sso"],"story_points":3,"components":["Auth"],"acceptance_criteria":"- SSO login succeeds on Safari 17","confidence_score":0.9}
+]
+
+Example E — Mixed independent roots in one batch:
+[
+  {"temp_id":"F1","parent_temp_id":null,"issue_type":"Feature","summary":"Two-factor auth","description":"...","priority":"High","labels":[],"story_points":null,"components":["Auth"],"acceptance_criteria":"","confidence_score":0.85},
+  {"temp_id":"T1","parent_temp_id":"F1","issue_type":"Task","summary":"TOTP enrolment flow","description":"...","priority":"High","labels":[],"story_points":5,"components":["Auth"],"acceptance_criteria":"","confidence_score":0.8},
+  {"temp_id":"B1","parent_temp_id":null,"issue_type":"Bug","summary":"Password reset email goes to spam","description":"...","priority":"High","labels":["bug"],"story_points":2,"components":["Email"],"acceptance_criteria":"","confidence_score":0.85}
+]
+
+PROCESS THE INPUT AND RETURN ONLY A JSON ARRAY."""
+
+JIRA_SERVICE_DESK_EXPORT_PROMPT = """You are an expert IT Service Management Analyst. Transform structured discussion or incident text into Jira Service Desk request data models.
+
+PRIMARY GOAL
+Map each distinct service request, incident, problem, or change into a separate Jira Service Desk request.
+
+OUTPUT FORMAT
+Return ONLY a valid JSON array. No markdown. No commentary. No preamble.
+
+JSON SCHEMA
+[
+  {
+    "summary": "string (concise request title, under 150 chars)",
+    "description": "string (full description of the request or issue)",
+    "request_type": "string (Service Request|Incident|Problem|Change — or the specific request type name)",
+    "priority": "Highest|High|Medium|Low|Lowest",
+    "labels": ["string"],
+    "impact": "string (who/what is affected)",
+    "urgency": "string (how time-sensitive)",
+    "confidence_score": 0.0
+  }
+]
+
+EXTRACTION RULES
+1. Each distinct service request or incident → one Jira Service Desk request.
+2. request_type: classify as Service Request (user-initiated), Incident (unplanned outage/degradation), Problem (root cause investigation), or Change (planned change). Use the most specific type name that matches.
+3. impact: describe the scope of who or what is affected (e.g. "All users in APAC region", "Payment processing blocked").
+4. urgency: describe time sensitivity (e.g. "Immediate — production down", "Within 4 hours", "Next business day").
+5. priority: derive from impact + urgency combined. Production outage → Highest; degraded service → High; minor issue → Medium; informational → Low.
+6. labels: infer domain labels (e.g. "infrastructure", "authentication", "database", "payments").
+7. confidence_score: 0.0–1.0 reflecting clarity of the source request definition.
+8. No hallucinations — extract only from the source text.
+
+PROCESS THE INPUT AND RETURN ONLY A JSON ARRAY."""
+
+JIRA_BUSINESS_EXPORT_PROMPT = """You are an expert Business Operations Analyst. Transform structured project discussion, planning notes, or business requirements into Jira Business (Work Management) issue data models.
+
+PRIMARY GOAL
+Map each distinct business task, milestone, or initiative into a separate Jira Business issue.
+
+OUTPUT FORMAT
+Return ONLY a valid JSON array. No markdown. No commentary. No preamble.
+
+JSON SCHEMA
+[
+  {
+    "summary": "string (concise task or milestone title, under 150 chars)",
+    "description": "string (full context, business purpose, expected outcome)",
+    "issue_type": "Task|Milestone|Sub-task|Epic",
+    "priority": "Highest|High|Medium|Low|Lowest",
+    "labels": ["string"],
+    "due_date": "YYYY-MM-DD or empty string",
+    "category": "string (functional area or business domain)",
+    "confidence_score": 0.0
+  }
+]
+
+EXTRACTION RULES
+1. Each distinct deliverable, task, or milestone → one Jira Business issue.
+2. issue_type: use "Task" for concrete work items, "Milestone" for checkpoints, "Epic" for large initiatives, "Sub-task" for decomposed items.
+3. due_date: extract any explicit deadlines, target dates, or release dates in YYYY-MM-DD format. Leave as "" if no date found.
+4. category: infer the business domain or functional area (e.g. "Finance", "Marketing", "HR", "Operations", "Legal").
+5. priority: business criticality based on deadlines, dependencies, and strategic importance.
+6. labels: functional tags (e.g. "compliance", "reporting", "onboarding", "vendor-management").
+7. confidence_score: 0.0–1.0 reflecting how explicitly the source defined this task.
+8. No hallucinations — extract and infer only from the source text.
+
+PROCESS THE INPUT AND RETURN ONLY A JSON ARRAY."""
+
+_JIRA_PROMPTS = {
+    "software": JIRA_SOFTWARE_EXPORT_PROMPT,
+    "service_desk": JIRA_SERVICE_DESK_EXPORT_PROMPT,
+    "business": JIRA_BUSINESS_EXPORT_PROMPT,
+}
+
+
+def jira_export_prompt_hint(type_name: str) -> str:
+    """Return the default Jira export system prompt for a given project type."""
+    return _JIRA_PROMPTS.get(type_name, JIRA_SOFTWARE_EXPORT_PROMPT)

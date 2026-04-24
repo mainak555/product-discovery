@@ -7,12 +7,15 @@ and translate results into HTTP/HTMX responses.
 
 import hmac
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from bson import ObjectId
 from bson.errors import InvalidId
+
+logger = logging.getLogger(__name__)
 from pymongo.errors import DuplicateKeyError
 
 from .db import get_collection, ensure_indexes, CHAT_SESSIONS_COLLECTION
@@ -21,8 +24,11 @@ from .model_catalog import (
     default_system_prompt_hint,
     selector_prompt_hint as _get_selector_prompt_hint,
     trello_export_prompt_hint as _get_trello_export_prompt_hint,
+    jira_export_prompt_hint as _get_jira_export_prompt_hint,
 )
 from .schemas import validate_project, validate_chat_session
+
+from agents.tracing import traced_function
 
 
 class ProjectDeletionBlocked(ValueError):
@@ -58,6 +64,11 @@ def get_selector_prompt_hint():
 def get_trello_export_prompt_hint():
     """Return the default Trello export system prompt template."""
     return _get_trello_export_prompt_hint()
+
+
+def get_jira_export_prompt_hint(type_name):
+    """Return the default Jira export system prompt for a given project type."""
+    return _get_jira_export_prompt_hint(type_name)
 
 
 SECRET_MASK = "••••••••"
@@ -196,8 +207,33 @@ def normalize_project(project):
         "trello": trello,
     }
 
+    # --- Jira ---
+    raw_jira = raw_integrations.get("jira") or {}
+    jira_enabled = bool(raw_jira.get("enabled", False))
+    jira = {"enabled": jira_enabled}
+    if jira_enabled:
+        for jira_type in ("software", "service_desk", "business"):
+            raw_type = raw_jira.get(jira_type) or {}
+            type_enabled = bool(raw_type.get("enabled", False))
+            type_cfg = {"enabled": type_enabled}
+            if type_enabled:
+                type_cfg["site_url"] = (raw_type.get("site_url") or "").strip()
+                type_cfg["email"] = (raw_type.get("email") or "").strip()
+                type_cfg["api_key"] = _mask_secret(raw_type.get("api_key"))
+                type_cfg["default_project_key"] = (raw_type.get("default_project_key") or "").strip()
+                type_cfg["default_project_name"] = (raw_type.get("default_project_name") or "").strip()
+                type_cfg["export_agents"] = _normalize_export_agents(raw_type, {})
+                raw_mapping = raw_type.get("export_mapping") or {}
+                type_cfg["export_mapping"] = {
+                    "system_prompt": (raw_mapping.get("system_prompt") or "").strip(),
+                    "model": (raw_mapping.get("model") or "").strip(),
+                    "temperature": _coerce_temperature(raw_mapping.get("temperature", 0.0)),
+                }
+            jira[jira_type] = type_cfg
+    integrations["jira"] = jira
+
     for provider_name in SUPPORTED_EXPORT_PROVIDERS:
-        if provider_name == "trello":
+        if provider_name in ("trello", "jira"):
             continue
         integrations[provider_name] = _normalize_provider_flags(raw_integrations, provider_name)
 
@@ -273,6 +309,7 @@ def get_project_raw(project_id):
     return doc
 
 
+@traced_function("service.project.create")
 def create_project(data):
     """
     Validate and insert a new project configuration.
@@ -288,13 +325,26 @@ def create_project(data):
     try:
         col.insert_one(doc)
     except DuplicateKeyError:
+        logger.warning(
+            "project.create_duplicate",
+            extra={"project_name": cleaned.get("project_name", "")},
+        )
         raise ValueError(
             f"A project named '{cleaned['project_name']}' already exists."
         )
 
-    return normalize_project(doc)
+    normalized = normalize_project(doc)
+    logger.info(
+        "project.created",
+        extra={
+            "project_id": str(normalized.get("project_id", "")),
+            "project_name": normalized.get("project_name", ""),
+        },
+    )
+    return normalized
 
 
+@traced_function("service.project.update")
 def update_project(project_id, data):
     """
     Validate and update an existing project configuration.
@@ -323,6 +373,10 @@ def update_project(project_id, data):
     try:
         result = col.replace_one({"_id": oid}, cleaned)
     except DuplicateKeyError:
+        logger.warning(
+            "project.update_duplicate",
+            extra={"project_id": project_id, "project_name": cleaned.get("project_name", "")},
+        )
         raise ValueError(
             f"A project named '{cleaned['project_name']}' already exists."
         )
@@ -330,7 +384,12 @@ def update_project(project_id, data):
         raise ValueError(f"Project not found.")
 
     cleaned["_id"] = oid
-    return normalize_project(cleaned)
+    normalized = normalize_project(cleaned)
+    logger.info(
+        "project.updated",
+        extra={"project_id": project_id, "project_name": normalized.get("project_name", "")},
+    )
+    return normalized
 
 
 def _restore_masked_secrets(data, existing):
@@ -354,7 +413,19 @@ def _restore_masked_secrets(data, existing):
         if not trello.get("token_generated_at"):
             trello["token_generated_at"] = existing_trello.get("token_generated_at", "")
 
+    # Jira secrets (per type)
+    jira = integrations.get("jira")
+    existing_jira = existing_integrations.get("jira") or {}
+    if isinstance(jira, dict):
+        for jira_type in ("software", "service_desk", "business"):
+            type_cfg = jira.get(jira_type)
+            existing_type = existing_jira.get(jira_type) or {}
+            if isinstance(type_cfg, dict):
+                if type_cfg.get("api_key") == SECRET_MASK:
+                    type_cfg["api_key"] = existing_type.get("api_key", "")
 
+
+@traced_function("service.project.delete")
 def delete_project(project_id):
     """Delete a project by _id (hex string). Raises ValueError if not found."""
     try:
@@ -372,8 +443,10 @@ def delete_project(project_id):
     result = col.delete_one({"_id": oid})
     if result.deleted_count == 0:
         raise ValueError("Project not found.")
+    logger.info("project.deleted", extra={"project_id": project_id})
 
 
+@traced_function("service.project.clone")
 def clone_project(project_id):
     """
     Clone an existing project as '{name} - Copy'.
@@ -464,6 +537,7 @@ def _ensure_discussion_ids(doc, col=None):
     return doc
 
 
+@traced_function("service.chat.create")
 def create_chat_session(project_id, description):
     """Insert a new chat session. Returns the normalized document."""
     cleaned = validate_chat_session({"project_id": project_id, "description": description})
@@ -477,7 +551,15 @@ def create_chat_session(project_id, description):
         "current_round": 0,
     }
     col.insert_one(doc)
-    return normalize_chat_session(doc)
+    normalized = normalize_chat_session(doc)
+    logger.info(
+        "chat.session.created",
+        extra={
+            "session_id": str(normalized.get("session_id", "")),
+            "project_id": cleaned["project_id"],
+        },
+    )
+    return normalized
 
 
 def set_session_status(session_id, status):
@@ -493,6 +575,7 @@ def set_session_status(session_id, status):
     col.update_one({"_id": oid}, update)
 
 
+@traced_function("service.chat.append_messages")
 def append_messages(session_id, messages):
     """Append a list of message dicts to session discussions."""
     try:
@@ -516,8 +599,8 @@ def append_messages(session_id, messages):
     col.update_one({"_id": oid}, {"$push": {"discussions": {"$each": to_append}}})
 
 
-def get_discussion_export_payload(session_id, discussion_id, provider):
-    """Return saved export payload for a discussion/provider, or None."""
+def get_discussion_export_payload(session_id, discussion_id, provider, subkey=None):
+    """Return saved export payload for a discussion/provider (optional subkey), or None."""
     try:
         oid = ObjectId(session_id)
     except (InvalidId, TypeError):
@@ -530,6 +613,12 @@ def get_discussion_export_payload(session_id, discussion_id, provider):
     provider_name = (provider or "").strip().lower()
     if not provider_name:
         raise ValueError("'provider' is required.")
+
+    provider_subkey = None
+    if subkey is not None:
+        provider_subkey = (subkey or "").strip().lower()
+        if not provider_subkey:
+            raise ValueError("'subkey' must be non-empty when provided.")
 
     col = get_collection(CHAT_SESSIONS_COLLECTION)
     session_doc = col.find_one({"_id": oid}, {"discussions": 1})
@@ -545,13 +634,18 @@ def get_discussion_export_payload(session_id, discussion_id, provider):
         if not isinstance(exports, dict):
             return None
         payload = exports.get(provider_name)
+        if provider_subkey is not None:
+            if not isinstance(payload, dict):
+                return None
+            payload = payload.get(provider_subkey)
         return payload if isinstance(payload, dict) else None
 
     raise ValueError("Discussion item not found for this session.")
 
 
-def set_discussion_export_payload(session_id, discussion_id, provider, payload):
-    """Persist export payload for a discussion/provider and return saved payload."""
+@traced_function("service.discussion.set_export_payload")
+def set_discussion_export_payload(session_id, discussion_id, provider, payload, subkey=None):
+    """Persist export payload for a discussion/provider (optional subkey) and return saved payload."""
     if not isinstance(payload, dict):
         raise ValueError("'payload' must be a JSON object.")
 
@@ -567,6 +661,12 @@ def set_discussion_export_payload(session_id, discussion_id, provider, payload):
     provider_name = (provider or "").strip().lower()
     if not provider_name:
         raise ValueError("'provider' is required.")
+
+    provider_subkey = None
+    if subkey is not None:
+        provider_subkey = (subkey or "").strip().lower()
+        if not provider_subkey:
+            raise ValueError("'subkey' must be non-empty when provided.")
 
     col = get_collection(CHAT_SESSIONS_COLLECTION)
     session_doc = col.find_one({"_id": oid})
@@ -586,7 +686,14 @@ def set_discussion_export_payload(session_id, discussion_id, provider, payload):
         exports = row.get("exports")
         if not isinstance(exports, dict):
             exports = {}
-        exports[provider_name] = payload
+        if provider_subkey is None:
+            exports[provider_name] = payload
+        else:
+            provider_obj = exports.get(provider_name)
+            if not isinstance(provider_obj, dict):
+                provider_obj = {}
+            provider_obj[provider_subkey] = payload
+            exports[provider_name] = provider_obj
         row["exports"] = exports
         found = True
         break
@@ -598,6 +705,7 @@ def set_discussion_export_payload(session_id, discussion_id, provider, payload):
     return payload
 
 
+@traced_function("service.chat.save_agent_state")
 def save_agent_state(session_id, state):
     """Persist serialized AutoGen TeamState for a chat session."""
     if not isinstance(state, dict):
@@ -674,6 +782,7 @@ def get_chat_session(session_id):
     return normalize_chat_session(doc)
 
 
+@traced_function("service.chat.delete")
 def delete_chat_session(session_id):
     """Delete a chat session by _id hex string. Raises ValueError if not found."""
     try:

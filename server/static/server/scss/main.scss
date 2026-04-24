@@ -197,6 +197,13 @@ a:hover { text-decoration: underline; }
   &:hover { background: darken($color-error, 8%); }
 }
 
+.btn--warning {
+  background: $color-warning-bg;
+  color: $color-text;
+  border-color: $color-warning-bg;
+  &:hover { background: $color-warning-bg-dk; border-color: $color-warning-bg-dk; }
+}
+
 .btn--sm { padding: $space-xs $space-sm; font-size: $font-size-sm; }
 .btn--xs { padding: 2px 6px; font-size: $font-size-sm; line-height: 1; }
 
@@ -266,6 +273,21 @@ select.input {
   }
 }
 
+.checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $space-xs $space-md;
+
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: $space-xs;
+    font-weight: 400;
+    margin-bottom: 0;
+    cursor: pointer;
+  }
+}
+
 .form-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -283,6 +305,12 @@ select.input {
   margin-bottom: $space-lg;
 }
 
+.form-hint--info {
+  color: $color-info;
+  font-size: $font-size-sm;
+  margin-top: $space-xs;
+}
+
 .form-actions {
   margin-top: $space-lg;
   display: flex;
@@ -294,6 +322,45 @@ select.input {
 // ---------------------------------------------------------------------------
 .config-form {
   max-width: 800px;
+
+  .input--sm {
+    padding: $space-sm $space-md;
+    font-size: $font-size-base;
+  }
+
+  .form-group {
+    margin-bottom: $space-sm;
+  }
+
+  fieldset.form-group {
+    margin-bottom: $space-md;
+  }
+
+  .form-row {
+    gap: $space-sm;
+  }
+
+  .section-fieldset {
+    padding: $space-md;
+  }
+
+  .agent-card {
+    padding: $space-sm $space-md;
+  }
+
+  .agent-card__fields {
+    display: flex;
+    flex-direction: column;
+    gap: $space-sm;
+  }
+
+  .agent-card__fields .form-group {
+    margin-bottom: 0;
+  }
+
+  .agent-card__fields .form-row {
+    margin-bottom: 0;
+  }
 }
 
 .config-form__title {
@@ -306,7 +373,10 @@ select.input {
 // ---------------------------------------------------------------------------
 // Agent Cards
 // ---------------------------------------------------------------------------
-.agents-fieldset {
+// ---------------------------------------------------------------------------
+// Section Fieldsets — shared container style for all top-level form sections
+// ---------------------------------------------------------------------------
+.section-fieldset {
   border: 1px solid $color-border;
   border-radius: $radius-lg;
   padding: $space-lg;
@@ -354,6 +424,75 @@ select.input {
   font-family: $font-family;
 }
 
+.agent-card__prompt--markdown {
+  white-space: normal;
+}
+
+.markdown-prose {
+  line-height: 1.6;
+
+  p {
+    margin: 0 0 $space-xs;
+  }
+
+  p:last-child {
+    margin-bottom: 0;
+  }
+
+  ul,
+  ol {
+    margin: 0 0 $space-sm $space-lg;
+    padding: 0;
+  }
+
+  li {
+    margin-bottom: $space-xs;
+  }
+
+  pre {
+    margin: 0 0 $space-sm;
+    padding: $space-sm;
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius;
+    overflow-x: auto;
+  }
+
+  code {
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 0.8125rem;
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius;
+    padding: 1px 4px;
+  }
+
+  pre code {
+    border: none;
+    background: transparent;
+    padding: 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: $space-sm 0;
+  }
+
+  th,
+  td {
+    border: 1px solid $color-border;
+    padding: $space-xs $space-sm;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background: $color-bg;
+    font-weight: 600;
+  }
+}
+
 .input--prompt {
   min-height: 18rem;
 }
@@ -385,6 +524,14 @@ select.input {
     margin-bottom: $space-sm;
     color: $color-primary;
   }
+}
+
+.config-readonly__markdown {
+  background: $color-surface;
+  border: 1px solid $color-border;
+  border-left: 3px solid $color-primary;
+  border-radius: $radius;
+  padding: $space-sm $space-md;
 }
 
 .config-readonly__hint {
@@ -1538,15 +1685,15 @@ select.input {
   font-size: 0.86rem;
   font-weight: 600;
   justify-content: center;
-  background: $color-info;
-  border-color: darken($color-info, 6%);
-  color: #fff;
+  background: $color-warning-bg;
+  border-color: $color-warning-bg;
+  color: $color-text;
 
   &:hover,
   &:focus-visible {
-    background: darken($color-info, 6%);
-    border-color: darken($color-info, 10%);
-    color: #fff;
+    background: $color-warning-bg-dk;
+    border-color: $color-warning-bg-dk;
+    color: $color-text;
     outline: none;
   }
 }
@@ -1599,6 +1746,10 @@ select.input {
 }
 
 .export-modal {
+  $export-context-action-bg: lighten($color-primary, 43%);
+  $export-context-action-border: lighten($color-primary, 28%);
+  $export-context-action-text: darken($color-primary, 12%);
+
   background: $color-bg;
   border-radius: $radius;
   width: 100%;
@@ -1649,6 +1800,54 @@ select.input {
     }
   }
 
+  &__section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-sm;
+    margin-bottom: $space-xs;
+
+    h4 {
+      margin: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: $space-xs;
+    }
+  }
+
+  &__section-divider {
+    border-top: 1px solid $color-border;
+    margin-bottom: $space-sm;
+  }
+
+  &__count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.45rem;
+    height: 1.45rem;
+    border-radius: $radius;
+    padding: 0 $space-xs;
+    background: lighten($color-primary, 40%);
+    color: darken($color-primary, 14%);
+    font-size: $font-size-sm;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  &__context-add-btn {
+    background: $export-context-action-bg;
+    border-color: $export-context-action-border;
+    color: $export-context-action-text;
+
+    &:hover,
+    &:focus-visible {
+      background: lighten($color-primary, 38%);
+      border-color: lighten($color-primary, 20%);
+      color: darken($color-primary, 16%);
+    }
+  }
+
   &__footer {
     display: flex;
     align-items: center;
@@ -1660,6 +1859,7 @@ select.input {
   &__token-status {
     &--valid { color: $color-success; font-weight: 600; }
     &--expired { color: $color-error; }
+    &--error { color: $color-error; }
   }
 }
 
@@ -1680,18 +1880,6 @@ select.input {
 
     h4 { margin: 0; }
 
-    #trello-add-card-btn {
-      background: $trello-context-action-bg;
-      border-color: $trello-context-action-border;
-      color: $trello-context-action-text;
-
-      &:hover,
-      &:focus-visible {
-        background: lighten($color-primary, 38%);
-        border-color: lighten($color-primary, 20%);
-        color: darken($color-primary, 16%);
-      }
-    }
   }
 
   &__section-divider {
@@ -1851,6 +2039,137 @@ select.input {
     flex-direction: column;
     margin-bottom: 0;
   }
+}
+
+.trello-workbench__pane--editor {
+  .jira-workspace-section {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0;
+  }
+}
+
+.jira-editor__issues {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: $space-xs;
+  display: flex;
+  flex-direction: column;
+  gap: $space-sm;
+}
+
+.jira-issue-card {
+  border: 1px solid darken($color-border, 3%);
+  border-radius: $radius;
+  background: lighten($color-bg, 1.5%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  padding: $space-sm;
+  display: flex;
+  flex-direction: column;
+  gap: $space-sm;
+}
+
+.jira-issue-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $space-sm;
+}
+
+.jira-issue-card__title {
+  font-size: $font-size-base;
+  font-weight: 700;
+  color: $color-text;
+}
+
+.jira-issue-card__field {
+  display: flex;
+  flex-direction: column;
+  gap: $space-xs;
+
+  label {
+    font-size: $font-size-sm;
+    font-weight: 600;
+    color: $color-text-muted;
+    margin: 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Hierarchical accordion (Jira Software). Pattern is shared — see
+// .agents/skills/hierarchical_export_items/SKILL.md before reusing.
+// Token-only colors / spacing.
+// ---------------------------------------------------------------------------
+
+.jira-issue-card__caret {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: $color-text-muted;
+  font-size: $font-size-base;
+  line-height: 1;
+  padding: 0 $space-xs;
+  cursor: pointer;
+  border-radius: $radius;
+
+  &:hover,
+  &:focus {
+    color: $color-text;
+    background: lighten($color-bg, 0.5%);
+    outline: none;
+  }
+}
+
+.jira-issue-card__type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 $space-xs;
+  border: 1px solid $color-border;
+  border-radius: $radius;
+  background: $color-surface;
+  color: $color-text-muted;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.jira-issue-card__child-count {
+  margin-left: $space-xs;
+}
+
+.jira-issue-card__header-spacer {
+  flex: 1;
+}
+
+.jira-issue-card--collapsed > .jira-issue-card__body,
+.jira-issue-card--collapsed > .jira-issue-card__children {
+  display: none;
+}
+
+.jira-issue-card__children {
+  margin-top: $space-sm;
+  padding-left: $space-md;
+  border-left: 2px solid $color-border;
+  display: flex;
+  flex-direction: column;
+  gap: $space-sm;
+}
+
+// Depth-based subtle tinting — keeps the tree readable without
+// introducing hardcoded colors.
+.jira-issue-card--depth-1 {
+  background: lighten($color-bg, 0.5%);
+}
+.jira-issue-card--depth-2 {
+  background: $color-surface;
+}
+.jira-issue-card--depth-3,
+.jira-issue-card--depth-4 {
+  background: lighten($color-bg, 1%);
 }
 
 .trello-workbench__pane--reference {
@@ -2045,6 +2364,18 @@ select.input {
       grid-template-columns: 1fr;
     }
   }
+
+  .jira-issue-card {
+    padding: $space-sm;
+  }
+
+  .jira-issue-card__header {
+    align-items: flex-start;
+  }
+
+  .jira-issue-card__children {
+    padding-left: $space-sm;
+  }
 }
 
 // Cascade select (workspace → board → list)
@@ -2131,6 +2462,7 @@ select.input {
 .form-group--nested {
   margin-left: $space-md;
   padding-left: $space-md;
+  padding-right: $space-sm;
   border-left: 3px solid $color-border;
 }
 
@@ -2220,4 +2552,42 @@ select.input {
 .badge-error {
   background: #fef2f2;
   color: #991b1b;
+}
+
+// ---------------------------------------------------------------------------
+// Jira Config — Connection status & nested sub-sections
+// ---------------------------------------------------------------------------
+
+.jira-verify-status {
+  display: inline-block;
+  margin-left: $space-sm;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+
+  &--ok {
+    color: $color-success;
+    font-weight: 600;
+  }
+
+  &--err {
+    color: $color-error;
+    font-weight: 600;
+  }
+}
+
+.form-group--nested-l2 {
+  margin-left: $space-md;
+  padding-left: $space-md;
+  padding-right: $space-sm;
+  border-left: 2px solid $color-border;
+}
+
+.jira-type-badge {
+  display: inline-block;
+  padding: 2px $space-xs;
+  border-radius: $radius;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  background: lighten($color-primary, 40%);
+  color: $color-primary;
 }

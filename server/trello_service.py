@@ -4,6 +4,7 @@ and orchestration of trello_client calls.
 """
 
 from datetime import datetime, timedelta, timezone
+import logging
 from urllib.parse import quote
 
 from bson import ObjectId
@@ -12,6 +13,9 @@ from bson.errors import InvalidId
 from .db import get_collection, CHAT_SESSIONS_COLLECTION
 from . import services
 from . import trello_client
+from agents.tracing import traced_function
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -412,6 +416,7 @@ def save_push_result(session_id, discussion_id, list_id, push_result):
     return services.set_discussion_export_payload(session_id, discussion_id, "trello", payload)
 
 
+@traced_function("service.trello.export.extract")
 def run_export_extract(session_id, discussion_id):
     """
     Run extraction agent against a selected discussion message.
@@ -484,6 +489,7 @@ def run_export_extract(session_id, discussion_id):
     return saved.get("cards") or []
 
 
+@traced_function("service.trello.export.push")
 def run_export_push(session_id, list_id, items):
     """
     Push extracted items to Trello as cards on the given list.

@@ -40,6 +40,17 @@ See [docs/trello_integration.md](docs/trello_integration.md) for:
 - Auth flow, cascade dropdowns, and export pipeline
 - API endpoint reference
 
+## Jira Integration
+
+See [docs/jira_integration.md](docs/jira_integration.md) for:
+- Architecture (jira_client → jira_service facade + type services + jira_views + jira.js + jira_adapter_factory + jira_config.js)
+- Three independent project types: `software`, `service_desk`, `business`
+- Per-type credentials, per-type export_agents, and per-type export schema
+- Atlassian Document Format (ADF) requirement and how it is handled
+- Config page credential verification and project cascade flow
+- Export modal flow and push response shape
+- API endpoint reference (project-scoped and session-scoped)
+
 ## Agent Teams & Runtime
 
 See [docs/agent_teams.md](docs/agent_teams.md) for:
@@ -49,6 +60,17 @@ See [docs/agent_teams.md](docs/agent_teams.md) for:
 - Human gate state machine and approve/feedback resume flow
 - Runtime team cache lifecycle (`runtime.py`)
 - How to add a new team type end-to-end
+
+## Observability & Logging
+
+See [docs/observability.md](docs/observability.md) for:
+- Console JSON log format (`request_id` / `trace_id` / `span_id` on every line)
+- OpenTelemetry tracing: what's auto-instrumented vs. manually decorated
+- Pluggable OTLP backend (Langfuse currently — swap pattern documented)
+- Redaction & truncation contracts (`set_payload_attribute`, `OTEL_MAX_PAYLOAD_BYTES`)
+- Console span exporter modes (`OTEL_CONSOLE_EXPORTER=off|error|all`)
+- Request ID propagation, AutoGen event-bridge contract, span payload rules
+- Validation checklist for new I/O code
 
 ## Key Rules
 
@@ -65,10 +87,37 @@ See [docs/agent_teams.md](docs/agent_teams.md) for:
 11. **No test suite yet** — planned for a future phase
 12. **Project deletion safety**: never cascade delete chats when deleting a project. If any chat sessions exist for a project, deletion must be blocked with a clear error message.
 13. **Common layer remains common**: global/shared modules (for example `server/static/server/js/app.js`) may contain only cross-feature utilities and hooks.
-14. **Feature ownership is mandatory**: Home, Project Config, and Trello implementations must stay separated in HTMX templates, JS modules, views, and services. Avoid adding feature-specific logic to shared files.
+14. **Feature ownership is mandatory**: Home, Project Config, Trello, and Jira implementations must stay separated in HTMX templates, JS modules, views, and services. Avoid adding feature-specific logic to shared files.
 15. **Provider registry is required for exports**: shared modules must use `server/static/server/js/provider_registry.js` (`window.ProviderRegistry`) instead of hardcoding provider names or provider-specific window globals.
-16. **Reusable export modal pattern is mandatory**: all export providers (Trello, Jira, PDF, n8n, future) must keep the same baseline layout and lifecycle: left editor workspace, right raw markdown pane from `discussion.content`, and footer actions for Extract, Save, and Export.
+16. **Reusable export modal pattern is mandatory**: all export providers (Trello, Jira, PDF, n8n, future) must use `window.ExportModalBase` (`server/static/server/js/export_modal_base.js`) as the shared modal shell. The base owns the overlay, header ("Export to {label}"), 70/30 split layout, right-pane reference loading, and footer buttons. Providers implement an adapter object; never build a modal overlay DOM structure inside a provider file.
 17. **Visual consistency is mandatory across pages**: destructive controls (delete buttons/icons), color-token usage, spacing rhythm, and modal typography must match shared patterns defined in SCSS and docs; provider-specific theming is additive, not divergent.
-18. **Extension skills are required for new providers**: follow `.agents/skills/export_popup_base/SKILL.md`, `.agents/skills/export_provider_adapter/SKILL.md`, `.agents/skills/ui_consistency_guardrails/SKILL.md`, `.agents/skills/scss_style_consistency/SKILL.md`, and `.agents/skills/markdown_viewer_reuse/SKILL.md` before implementing a new export provider.
+18. **Extension skills are required for new providers**: follow `.agents/skills/export_popup_base/SKILL.md`, `.agents/skills/export_provider_adapter/SKILL.md`, `.agents/skills/ui_consistency_guardrails/SKILL.md`, `.agents/skills/scss_style_consistency/SKILL.md`, `.agents/skills/markdown_viewer_reuse/SKILL.md`, `.agents/skills/hierarchical_export_items/SKILL.md` (when items can nest), and `.agents/skills/observability_logging/SKILL.md` before implementing a new export provider.
 19. **SCSS consistency is mandatory**: all styling changes must follow `docs/scss_style_guide.md` and must not introduce hardcoded color values when shared tokens exist.
-20. **Markdown rendering must be reusable**: shared markdown rendering belongs in `server/static/server/js/markdown_viewer.js`; Home, Trello popup, and future providers must consume this common module instead of duplicating parsers.
+20. **Markdown rendering must be reusable**: shared markdown rendering belongs in `server/static/server/js/markdown_viewer.js`; Home, Trello popup, Jira popup, and future providers must consume this common module instead of duplicating parsers.
+21. **Jira export_agents are per-type**: for Jira, `export_agents` is scoped to each project type (`integrations.jira.software.export_agents`, etc.). There is no global `integrations.jira.export_agents` field. Validation, normalization, and template rendering must all read from the per-type config.
+22. **Textarea fields in config forms must include a `<small class="form-hint">` below them** describing the field's purpose in plain language. The hint must be specific to the field's integration and type (e.g. "Prompt used by the extraction agent to parse the discussion into Jira Software issues."). Never leave a textarea without a hint.
+23. **Nested fieldset indentation must be uniform across all nesting levels**: both L1 (`.form-group--nested`) and L2 (`.form-group--nested-l2`) use `margin-left: $space-md` and `padding-right: $space-sm`. Do not use `$space-lg` or any larger value for L2, and do not add `margin-top` to nested fieldsets — vertical rhythm is provided by the preceding element's `margin-bottom`. Missing `padding-right` causes textarea scrollbars and inputs to clip at the section edge. See `docs/scss_style_guide.md` §"Section Fieldsets (Config Form)" rules 4–6.
+24. **`export_modal_base.js` is the only modal shell**: all export providers call `window.ExportModalBase.open(ctx, adapter)` and implement the adapter interface defined in `.agents/skills/export_popup_base/SKILL.md`. No provider file may build an overlay DOM with `overlay.innerHTML = ...` for the modal wrapper.
+25. **Export modal context must include `projectId`**: the context object passed to `ProviderRegistry.openExportModal()` must always carry `{provider, sessionId, discussionId, secretKey, csrfToken, projectId}`. A missing `projectId` is a defect that must be fixed in `home.js`.
+26. **Jira backend separation is mandatory**: `server/jira_service.py` is the shared facade only. Type-owned logic must live in `server/jira_software_service.py`, `server/jira_service_desk_service.py`, and `server/jira_business_service.py`.
+27. **Jira frontend adapter separation is mandatory**: shared Jira export modal lifecycle logic belongs in `server/static/server/js/jira_adapter_factory.js`; type-owned provider registration belongs only in `jira_software.js`, `jira_service_desk.js`, and `jira_business.js`.
+28. **Jira layering skill is required for Jira refactors**: follow `.agents/skills/jira_layer_separation/SKILL.md` before changing Jira services or Jira export adapters.
+29. **Jira Software export modal metadata flow is mandatory**: project-specific dropdown options (issue type, priority, sprint, epic) must come from `GET /jira/<session_id>/metadata/software/?project_key=<key>` and must be fetched via `jira_adapter_factory.js` after destination project selection.
+30. **Jira Software global Sprint/Epic cascade is mandatory**: destination-level Sprint and Epic selectors define default values for all issue rows and must overwrite all rows whenever the global selector changes; row-level selectors remain editable for per-issue overrides after propagation.
+31. **Jira Software fallback behavior is mandatory**: if project metadata cannot be loaded, the modal must remain usable by falling back to default issue type/priority options and minimal Sprint/Epic options (`Backlog`/`None`), with a non-blocking status message.
+32. **Jira export label contract is mandatory**: `export_modal_base.js` header title uses adapter `label`, while export button text may use adapter `pushLabel` override. Jira Software currently uses header label `Jira` and push label `Jira Software`.
+33. **Export popup add-action button style is mandatory**: left-pane create/add actions for cards/issues/items must use shared class `export-modal__context-add-btn` so all providers keep the same contextual add-button color treatment.
+34. **Export popup card background contract is mandatory**: editable item cards across providers must use token-derived light panel backgrounds (for example `lighten($color-bg, 1.5%)`) with shared border/radius rhythm; avoid provider-specific hardcoded card background colors.
+35. **Export popup item heading count badge is mandatory**: editable item section headings must use concise labels with a shared count badge (`export-modal__count-badge`), e.g. `Cards <count>`, `Issues <count>`, so counts are shown consistently across providers.
+36. **Jira connection status message contract is mandatory**: the Jira export modal connection row must display `{Jira type label} Connected` on success (for example `Jira Software Connected`) and a clear type-scoped error message on failure.
+37. **Jira metadata option deduplication is mandatory**: issue-type/priority dropdown options must be deduplicated by display label before rendering so duplicate labels (for example `Epic`) are never shown twice in issue cards.
+38. **Project Config readonly markdown contract is mandatory**: readonly Objective, assistant system prompts, team selector system prompt, and integration extraction prompts (Trello and Jira types) must render via `window.MarkdownViewer.render()` using markdown target containers, not plain `<p>`/`<pre>` text blocks.
+39. **Project Config readonly integrations parity is mandatory**: when integrations are enabled, readonly view must render Trello plus each enabled Jira type section (`software`, `service_desk`, `business`) with type-scoped readonly fields and extraction prompt visibility.
+40. **Hierarchical export items use temp_id + parent_temp_id only**: any export provider whose items can nest (currently Jira Software, plus future providers) must persist parent linkage via `temp_id` + `parent_temp_id` and must NOT store `depth_level`. Depth is derived at render and push time. See `.agents/skills/hierarchical_export_items/SKILL.md` for the full data, render, and push contracts.
+41. **Jira Software left-pane cascade is Project + Sprint only**: the Epic dropdown has been removed from the export modal. Parent linkage is expressed via the issue tree (`parent_temp_id`), not via a global Epic selector. The Sprint selector must always include a `Backlog` option whose value is the empty string.
+42. **Jira Software push must be BFS with `temp_to_key` mapping**: `push_issues_software` walks roots first then breadth-first, populates `temp_to_key` as each issue is created, and resolves child `parent_temp_id` to a real Jira key before sending `fields.parent`. A child whose parent failed to create must record a warning and be created as a root, never abort the batch. Result entries must echo `temp_id`.
+43. **Jira Software sprint assignment via Agile API**: a non-empty `sprint` value triggers `POST /rest/agile/1.0/sprint/{id}/issue` AFTER the issue is created. An empty `sprint` value means Backlog and the Agile API call must be skipped entirely (the issue lands in backlog by default). Sprint failures are per-issue warnings, never batch failures. Issue types `Epic` and `Sub-task` are non-sprintable and must skip the Agile call with a warning.
+44. **Observability is governed by [docs/observability.md](docs/observability.md) + [`.agents/skills/observability_logging/SKILL.md`](.agents/skills/observability_logging/SKILL.md)**: every Python module that performs HTTP, MongoDB, file, or LLM I/O must declare `logger = logging.getLogger(__name__)`, never use `print()`, never log secrets (API keys, OAuth tokens, `Authorization`/Basic-auth, passwords, `X-App-Secret-Key`, Trello `key=`/`token=` query params, full request/response bodies), and propagate `X-Request-ID` via `RequestIdMiddleware`. Event names use dotted snake_case scoped by layer (e.g. `project.created`, `agents.model_client.created`, `tracing.enabled`).
+45. **OpenTelemetry is the project-wide tracing standard**: all I/O layers emit spans into a single trace per request via `@traced_function` / `traced_block` from `agents/tracing.py`, plus three category-gated auto-instrumentation toggles — `OTEL_INSTRUMENT_HTTP` (Django + `requests`, default **on**), `OTEL_INSTRUMENT_PYMONGO` (pymongo, default **off** — high-volume DB spans), `OTEL_INSTRUMENT_AGENTS` (AutoGen event-log → span bridge, default **on**). The OTLP exporter is **pluggable** — Langfuse is wired today via `_build_langfuse_exporter()`; swapping backends is a one-function change in `_build_exporter()`. Span payloads are always set through `set_payload_attribute()` so redaction (`redact_payload()`) and truncation (`OTEL_MAX_PAYLOAD_BYTES`, default 32 KB) run uniformly. Console span output is opt-in via `OTEL_CONSOLE_EXPORTER` (`off` / `error` / `all`); `LOG_LEVEL=DEBUG` upgrades the default to `all`. Active toggles are echoed on the `tracing.enabled` startup log line (`instrument_http`, `instrument_pymongo`, `instrument_agents`, `console_span_mode`). Treat the OTLP backend as PII-bearing (Trello card descriptions, Jira issue summaries are forwarded as payloads). Full contract, env vars, and validation checklist live in [docs/observability.md](docs/observability.md).
+46. **Observability skill is required for new I/O code**: before adding a new HTTP client, service module, MongoDB access path, agent-runtime entry point, or model client wrapper, follow [`.agents/skills/observability_logging/SKILL.md`](.agents/skills/observability_logging/SKILL.md) for the logger, event-name, redaction, request-ID, span-payload, and tracing-decorator contracts.
+47. **Model endpoint fallback contract is mandatory**: in `agents/factory.py`, endpoint resolution order is JSON `endpoint` first, then `{PROVIDER_UPPER}_API_URL` env fallback. API key resolution remains `{PROVIDER_UPPER}_API_KEY`. Azure providers (`azure_openai`, `azure_anthropic`) must still fail fast if endpoint is missing after fallback.
