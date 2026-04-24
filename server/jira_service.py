@@ -359,6 +359,9 @@ def normalize_export_items(items, type_name):
         else:
             raise ValueError(f"Unknown Jira type '{type_name}'.")
 
+    if type_name == "software":
+        normalized = jira_software_service.repair_hierarchy(normalized)
+
     return normalized
 
 

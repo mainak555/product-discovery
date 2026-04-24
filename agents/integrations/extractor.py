@@ -12,6 +12,7 @@ import re
 import time
 
 from agents.factory import build_model_client
+from agents.tracing import traced_block
 
 logger = logging.getLogger(__name__)
 
@@ -78,52 +79,68 @@ def run_extraction(
         "agents.extraction.started",
         extra={"model_name": model_name, "discussion_chars": len(discussion_text or "")},
     )
-    t0 = time.monotonic()
-    raw = asyncio.run(_run())
-    elapsed_ms = int((time.monotonic() - t0) * 1000)
+    with traced_block(
+        "agents.extraction.run",
+        {
+            "gen_ai.system": "autogen",
+            "gen_ai.operation.name": "text_completion",
+            "app.component": "agents.integrations.extractor",
+            "app.model_name": model_name,
+            "app.discussion_chars": len(discussion_text or ""),
+        },
+    ) as span:
+        t0 = time.monotonic()
+        raw = asyncio.run(_run())
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
 
-    # Parse JSON from the response — handle markdown code fences
-    text = raw.strip()
-    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-    if fence_match:
-        text = fence_match.group(1).strip()
+        # Parse JSON from the response — handle markdown code fences.
+        text = raw.strip()
+        fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+        if fence_match:
+            text = fence_match.group(1).strip()
 
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError as exc:
-        logger.exception(
-            "agents.extraction.parse_failed",
-            extra={
-                "model_name": model_name,
-                "elapsed_ms": elapsed_ms,
-                "raw_snippet": text[:500],
-            },
-        )
-        raise ValueError(f"Extractor returned invalid JSON: {exc}\n\nRaw output:\n{text}")
-
-    # Normalize common model output variants.
-    # Expected shape is {"items": [...]}, but some models may return
-    # {"items": null} (no extraction) or omit the key entirely.
-    if isinstance(parsed, dict):
-        items = parsed.get("items")
-        if items is None:
-            logger.info(
-                "agents.extraction.completed",
-                extra={"model_name": model_name, "elapsed_ms": elapsed_ms, "item_count": 0},
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            logger.exception(
+                "agents.extraction.parse_failed",
+                extra={
+                    "model_name": model_name,
+                    "elapsed_ms": elapsed_ms,
+                    "raw_snippet": text[:500],
+                },
             )
-            return []
-    else:
-        items = parsed
+            raise ValueError(f"Extractor returned invalid JSON: {exc}\n\nRaw output:\n{text}")
 
-    if not isinstance(items, list):
-        logger.error(
-            "agents.extraction.shape_mismatch",
-            extra={"model_name": model_name, "actual_type": type(items).__name__},
+        # Normalize common model output variants.
+        # Expected shape is {"items": [...]}, but some models may return
+        # {"items": null} (no extraction) or omit the key entirely.
+        if isinstance(parsed, dict):
+            items = parsed.get("items")
+            if items is None:
+                if span is not None:
+                    span.set_attribute("app.item_count", 0)
+                    span.set_attribute("app.elapsed_ms", elapsed_ms)
+                logger.info(
+                    "agents.extraction.completed",
+                    extra={"model_name": model_name, "elapsed_ms": elapsed_ms, "item_count": 0},
+                )
+                return []
+        else:
+            items = parsed
+
+        if not isinstance(items, list):
+            logger.error(
+                "agents.extraction.shape_mismatch",
+                extra={"model_name": model_name, "actual_type": type(items).__name__},
+            )
+            raise ValueError(f"Expected 'items' array in extractor output, got: {type(items).__name__}")
+
+        if span is not None:
+            span.set_attribute("app.item_count", len(items))
+            span.set_attribute("app.elapsed_ms", elapsed_ms)
+        logger.info(
+            "agents.extraction.completed",
+            extra={"model_name": model_name, "elapsed_ms": elapsed_ms, "item_count": len(items)},
         )
-        raise ValueError(f"Expected 'items' array in extractor output, got: {type(items).__name__}")
-
-    logger.info(
-        "agents.extraction.completed",
-        extra={"model_name": model_name, "elapsed_ms": elapsed_ms, "item_count": len(items)},
-    )
-    return items
+        return items

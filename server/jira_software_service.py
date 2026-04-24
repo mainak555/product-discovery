@@ -116,6 +116,67 @@ def normalize_item(item, normalize_labels, coerce_confidence):
     }
 
 
+# ---------------------------------------------------------------------------
+# Hierarchy repair — defensive normalizer
+# ---------------------------------------------------------------------------
+#
+# Jira enforces parent/child rules at the API layer (Sub-task must have a
+# parent, Bug/Sub-task cannot have children, etc.). The LLM occasionally
+# violates these rules even with a strict prompt. We repair the tree
+# *before* push so a single bad row does not orphan the rest of the batch.
+
+# Allowed child issue types per parent type (lowercase, including aliases).
+_ALLOWED_CHILDREN = {
+    "epic":     {"feature", "story", "task", "bug"},
+    "feature":  {"story", "task", "bug"},
+    "story":    {"task", "sub-task", "subtask", "bug"},
+    "task":     {"sub-task", "subtask", "bug"},
+    "sub-task": set(),
+    "subtask":  set(),
+    "bug":      set(),
+}
+
+# Issue types that must never appear as a root.
+_NEVER_ROOT = {"sub-task", "subtask"}
+
+
+def repair_hierarchy(items):
+    """Repair common LLM hierarchy mistakes in a normalized issue list.
+
+    - Drops a `parent_temp_id` that points at a non-existent or leaf parent.
+    - Demotes a Sub-task to Task if it has no valid parent (Sub-task cannot
+      be a root in Jira).
+    - Returns the same list (mutated in place) for convenience.
+    """
+    if not items:
+        return items
+
+    by_id = {it["temp_id"]: it for it in items if it.get("temp_id")}
+
+    for it in items:
+        pid = it.get("parent_temp_id")
+        if not pid:
+            continue
+        parent = by_id.get(pid)
+        if parent is None:
+            it["parent_temp_id"] = None
+            continue
+        p_type = (parent.get("issue_type") or "").strip().lower()
+        c_type = (it.get("issue_type") or "").strip().lower()
+        allowed = _ALLOWED_CHILDREN.get(p_type, set())
+        if not allowed or c_type not in allowed:
+            # Parent type cannot legally hold this child -> demote to root.
+            it["parent_temp_id"] = None
+
+    # Sub-task without a parent is illegal in Jira -> promote to Task.
+    for it in items:
+        c_type = (it.get("issue_type") or "").strip().lower()
+        if c_type in _NEVER_ROOT and not it.get("parent_temp_id"):
+            it["issue_type"] = "Task"
+
+    return items
+
+
 def push_issues(site_url, email, api_key, project_key, normalized_items):
     """Push normalized Jira Software items to Jira."""
     return jira_client.push_issues_software(site_url, email, api_key, project_key, normalized_items)
