@@ -139,6 +139,12 @@ LOGGING = {
         "request_id": {
             "()": "server.logging_utils.RequestIdFilter",
         },
+        "trace_context": {
+            "()": "server.logging_utils.TraceContextFilter",
+        },
+        "event_only": {
+            "()": "server.logging_utils.EventOnlyConsoleFilter",
+        },
     },
     "formatters": {
         "json": {
@@ -150,16 +156,19 @@ LOGGING = {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "json",
-            "filters": ["request_id"],
+            "filters": ["request_id", "trace_context", "event_only"],
         },
     },
     "loggers": {
         "server": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
         "agents": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
+        # NOTE: `autogen_core.events` and `autogen_agentchat.events` are
+        # intentionally NOT listed here. `agents.tracing._install_autogen_event_bridge`
+        # owns those loggers — it strips the shared `console` handler and
+        # attaches the span-bridge handler instead. INFO payload events flow
+        # to spans (with redaction + truncation), never to console.
         "autogen_core": {"handlers": ["console"], "level": "WARNING", "propagate": False},
-        "autogen_core.events": {"handlers": ["console"], "level": "ERROR", "propagate": False},
         "autogen_agentchat": {"handlers": ["console"], "level": "WARNING", "propagate": False},
-        "autogen_agentchat.events": {"handlers": ["console"], "level": "ERROR", "propagate": False},
         "django.request": {"handlers": ["console"], "level": "WARNING", "propagate": False},
         "django.server": {"handlers": ["console"], "level": "WARNING", "propagate": False},
         "pymongo": {"handlers": ["console"], "level": "WARNING", "propagate": False},

@@ -7,6 +7,9 @@ from . import jira_client
 logger = logging.getLogger(__name__)
 
 
+from agents.tracing import traced_function
+
+
 def fetch_spaces(site_url, email, api_key):
     """Return Jira Service Desk spaces for the configured credentials."""
     return jira_client.get_service_desks(site_url, email, api_key)
@@ -34,6 +37,7 @@ def normalize_item(item, normalize_labels, coerce_confidence):
     }
 
 
+@traced_function("service.jira.service_desk.push_issues")
 def push_issues(site_url, email, api_key, project_key, normalized_items):
     """Push normalized Jira Service Desk items to Jira."""
     return jira_client.push_issues_service_desk(site_url, email, api_key, project_key, normalized_items)

@@ -5,6 +5,12 @@ Auth: Basic Auth with base64("email:api_key") in Authorization header.
 Each function takes (site_url, email, api_key) plus endpoint-specific params.
 All responses are simplified dicts; errors raise ValueError.
 
+Per-call HTTP detail (timing, status, request/response bodies) is captured
+on OpenTelemetry spans created by the auto-instrumented ``requests``
+library; this module enriches the active span with the redacted action +
+payload context. Only ERROR records are emitted to console. The
+Authorization header is never logged or attached to spans.
+
 Jira REST API base URLs (constructed at call time):
   software   : https://<site_url>/rest/api/3/   +  /rest/agile/1.0/ (sprints)
   service_desk: https://<site_url>/rest/servicedeskapi/
@@ -20,6 +26,8 @@ import base64
 import logging
 
 import requests
+
+from agents.tracing import set_payload_attribute
 
 logger = logging.getLogger(__name__)
 
@@ -55,26 +63,40 @@ def _auth_headers(email, api_key):
 
 
 def _check(resp, action):
-    """Log the call (success or error) and raise ValueError on non-2xx.
+    """Enrich the active span and raise ValueError on non-2xx responses.
 
-    Never log the Authorization header or request body.
+    Never logs the Authorization header or request body to console.
     """
+    span = None
+    try:
+        from opentelemetry import trace
+        candidate = trace.get_current_span()
+        if candidate and candidate.is_recording():
+            span = candidate
+    except Exception:
+        span = None
+
+    if span is not None:
+        try:
+            span.set_attribute("jira.action", action)
+            span.set_attribute("http.status_code", resp.status_code)
+            url = getattr(resp.request, "url", "") or ""
+            if url:
+                span.set_attribute("http.url", url)
+        except Exception:
+            pass
+        request_body = getattr(getattr(resp, "request", None), "body", None)
+        if request_body:
+            set_payload_attribute(span, "input.value", request_body)
+        if resp.text:
+            set_payload_attribute(span, "output.value", resp.text)
+
+    if resp.ok:
+        return
+
     method = getattr(resp.request, "method", "?") if resp.request else "?"
     url = getattr(resp.request, "url", "") or ""
     elapsed_ms = int(resp.elapsed.total_seconds() * 1000) if resp.elapsed else 0
-
-    if resp.ok:
-        logger.info(
-            "jira.api.call",
-            extra={
-                "action": action,
-                "method": method,
-                "url": url,
-                "status": resp.status_code,
-                "elapsed_ms": elapsed_ms,
-            },
-        )
-        return
 
     detail = ""
     try:

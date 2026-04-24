@@ -47,7 +47,7 @@ class RequestIdFilter(logging.Filter):
 
 
 class JsonFormatter(jsonlogger.JsonFormatter):
-    """JSON formatter that always includes timestamp, level, logger name, and request_id."""
+    """JSON formatter that always includes timestamp, level, logger name, request_id, and trace ids."""
 
     def add_fields(self, log_record, record, message_dict):
         super().add_fields(log_record, record, message_dict)
@@ -55,3 +55,64 @@ class JsonFormatter(jsonlogger.JsonFormatter):
         log_record["level"] = record.levelname
         log_record["logger"] = record.name
         log_record["request_id"] = getattr(record, "request_id", "-")
+        log_record["trace_id"] = getattr(record, "trace_id", "-")
+        log_record["span_id"] = getattr(record, "span_id", "-")
+
+
+class TraceContextFilter(logging.Filter):
+    """Attach the active OpenTelemetry trace_id / span_id to every log record.
+
+    Allows console JSON lines to be cross-referenced with the OTLP backend
+    (Langfuse / Tempo / Jaeger) by trace id. Safe no-op when OpenTelemetry
+    is not importable or no span is active.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            from opentelemetry import trace
+        except Exception:
+            record.trace_id = "-"
+            record.span_id = "-"
+            return True
+        try:
+            span = trace.get_current_span()
+            ctx = span.get_span_context() if span is not None else None
+            if ctx is not None and getattr(ctx, "is_valid", False):
+                record.trace_id = f"{ctx.trace_id:032x}"
+                record.span_id = f"{ctx.span_id:016x}"
+            else:
+                record.trace_id = "-"
+                record.span_id = "-"
+        except Exception:
+            record.trace_id = "-"
+            record.span_id = "-"
+        return True
+
+
+# Suffixes whose INFO records are dropped from console output. Per-call HTTP
+# detail (`*.api.call`) is captured on spans via OpenTelemetry; it would just
+# be noise in console. WARNING/ERROR/EXCEPTION records always pass through.
+_CONSOLE_INFO_SUPPRESS_SUFFIXES = (
+    ".api.call",
+)
+
+
+class EventOnlyConsoleFilter(logging.Filter):
+    """Drop noisy per-call INFO records from the console handler.
+
+    Keeps lifecycle events (e.g. ``project.created``, ``tracing.enabled``)
+    and all WARNING+ records. Suppresses high-frequency I/O detail that is
+    already captured on spans.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.WARNING:
+            return True
+        try:
+            message = record.getMessage()
+        except Exception:
+            return True
+        for suffix in _CONSOLE_INFO_SUPPRESS_SUFFIXES:
+            if message.endswith(suffix):
+                return False
+        return True

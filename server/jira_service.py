@@ -18,6 +18,7 @@ from . import jira_client
 from . import jira_software_service
 from . import jira_service_desk_service
 from . import jira_business_service
+from agents.tracing import traced_function
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +180,7 @@ def get_session_type_status(session_id, type_name):
 # Project-scoped API proxies (config page)
 # ---------------------------------------------------------------------------
 
+@traced_function("service.jira.verify_credentials")
 def verify_project_type_credentials(project_id, type_name):
     """Verify Jira credentials for a project type. Returns user info dict."""
     site_url, email, api_key = _resolve_project_type_credentials(project_id, type_name)
@@ -215,6 +217,7 @@ def fetch_session_spaces(session_id, type_name):
         raise ValueError(f"Unknown Jira type '{type_name}'.")
 
 
+@traced_function("service.jira.fetch_metadata")
 def fetch_session_project_metadata(session_id, type_name, project_key):
     """Fetch project metadata used by export editor dropdowns."""
     project_key = (project_key or "").strip()
@@ -260,6 +263,7 @@ def _get_type_export_mapping(project, type_name):
     return system_prompt, model, temperature
 
 
+@traced_function("service.jira.export.extract")
 def run_export_extract(session_id, discussion_id, type_name):
     """
     Run extraction agent against a discussion, returning extracted issue items.
@@ -443,6 +447,7 @@ def save_push_result(session_id, discussion_id, type_name, project_key, push_res
 # Export push
 # ---------------------------------------------------------------------------
 
+@traced_function("service.jira.export.push")
 def run_export_push(session_id, type_name, project_key, items):
     """Push issues to Jira and return result list."""
     normalized = normalize_export_items(items, type_name)

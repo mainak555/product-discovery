@@ -1,43 +1,87 @@
+"""OpenTelemetry tracing for the product-discovery app.
+
+OpenTelemetry is the project-wide observability standard. The OTLP exporter
+is pluggable: Langfuse is the currently-wired backend, but swapping to a
+generic OTLP collector (Tempo / Jaeger / Honeycomb / etc.) is mechanical —
+replace ``_build_langfuse_exporter()`` with a sibling helper that reads
+``OTEL_EXPORTER_OTLP_ENDPOINT`` + ``OTEL_EXPORTER_OTLP_HEADERS`` and return
+that from ``_build_exporter()``. No call sites change.
+
+What this module owns
+---------------------
+- ``init_tracing()`` — one-shot wiring (TracerProvider, exporter, auto-instr,
+  AutoGen event bridge). Called once from ``server/apps.py`` ``ServerConfig.ready``.
+- ``traced_block(name, attributes)`` — context manager for manual spans.
+- ``traced_function(name, attributes)`` — decorator wrapper around
+  ``traced_block`` for service-layer functions.
+- ``redact_payload(value)`` — deep-walks dict/list/str and masks any field
+  matching the secret-key regex. Used before setting ``input.value`` /
+  ``output.value`` on spans.
+- ``truncate_for_span(text)`` — caps payloads at ``OTEL_MAX_PAYLOAD_BYTES``
+  bytes (default 32 KB). Returns ``(text, truncated, original_bytes)``.
+
+Env vars
+--------
+- ``LANGFUSE_PUBLIC_KEY`` / ``LANGFUSE_SECRET_KEY`` — required to enable export.
+  Missing → ``tracing.disabled`` info log, no exporter, no errors.
+- ``LANGFUSE_HOST`` — default ``https://cloud.langfuse.com``.
+- ``OTEL_SERVICE_NAME`` — default ``product-discovery``.
+- ``OTEL_MAX_PAYLOAD_BYTES`` — payload truncation cap (default 32768).
+- ``OTEL_CONSOLE_EXPORTER`` — span console output mode:
+    * ``off`` (default): no spans on console; OTLP backend still receives all spans.
+    * ``error``: print only ERROR-status spans (full attributes + recorded
+      exception + stacktrace) to stderr. Useful in production for
+      diagnosing failures without log scraping.
+    * ``all`` / ``true`` / ``1``: print every finished span to stderr (very
+      noisy — dev-only). Implicitly enabled when ``LOG_LEVEL=DEBUG``.
+
+Boundaries
+----------
+Logs always go to console (stderr / JSON formatter). Tracing is strictly
+opt-in: when ``init_tracing`` is disabled, every helper still works as a
+no-op so callers never need to feature-flag their span code.
 """
-Langfuse tracing wiring via OpenTelemetry.
 
-Env-gated: requires LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY. Optional
-LANGFUSE_HOST (default https://cloud.langfuse.com).
-
-When env vars are missing, init_tracing() logs `tracing.disabled` and returns
-without configuring an exporter. Failures during init are logged via
-`logger.exception` and never propagate.
-
-Once initialized, the global OpenTelemetry TracerProvider is set; AutoGen 0.4+
-SingleThreadedAgentRuntime picks up the tracer provider passed explicitly or
-falls back to the global one used by manual spans.
-"""
+from __future__ import annotations
 
 import base64
-from contextlib import contextmanager
+import functools
 import json
 import logging
 import os
 import re
+from contextlib import contextmanager
 from threading import Lock
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Module state
+# ---------------------------------------------------------------------------
 _initialized = False
 _lock = Lock()
-_tracer_provider = None
+_tracer_provider: Any = None
 _event_bridge_installed = False
 
 
+# ---------------------------------------------------------------------------
+# Payload helpers (MIME inference, redaction, truncation)
+# ---------------------------------------------------------------------------
 _MARKDOWN_PATTERN = re.compile(
     r"(^\s{0,3}#{1,6}\s+)|(^\s{0,3}[-*+]\s+)|(^\s{0,3}>\s+)|(```)|(`[^`]+`)|(\[[^\]]+\]\([^\)]+\))",
     re.MULTILINE,
 )
 
+_SECRET_KEY_RE = re.compile(
+    r"(?i)(api[_-]?key|secret|password|token|authorization|x[-_]app[-_]secret[-_]key)"
+)
+
+_DEFAULT_MAX_PAYLOAD_BYTES = 32 * 1024
+
 
 def _infer_mime_type(value: Any) -> str:
-    """Infer a payload MIME type for generic trace attributes."""
+    """Infer a payload MIME type for span attributes."""
     if isinstance(value, (dict, list, tuple)):
         return "application/json"
     if isinstance(value, str):
@@ -66,65 +110,85 @@ def _stringify_payload(value: Any) -> str:
         return str(value)
 
 
-def _is_agent_llm_span(span: Any) -> bool:
-    """Return True when a span belongs to Agent/LLM execution scope."""
-    name = str(getattr(span, "name", "")).lower()
-    attributes = getattr(span, "attributes", {}) or {}
-    scope = getattr(span, "instrumentation_scope", None)
-    scope_name = str(getattr(scope, "name", "")).lower() if scope is not None else ""
+def redact_payload(value: Any) -> Any:
+    """Deep-redact any value before serializing it onto a span attribute.
 
-    # AutoGen-instrumented spans are always in scope for Langfuse.
-    if scope_name.startswith("autogen"):
-        return True
-
-    # Manual allowlist for agent-owned LLM spans.
-    if name == "agents.extraction.run":
-        return True
-
-    gen_ai_system = str(attributes.get("gen_ai.system", "")).lower()
-    app_component = str(attributes.get("app.component", "")).lower()
-    if name.startswith("agents.llm.") and gen_ai_system:
-        return True
-    if name.startswith("agents.") and app_component.startswith("agents.") and gen_ai_system:
-        return True
-
-    return False
-
-
-class AgentLlmFilteringExporter:
-    """Forward only Agent/LLM spans to the wrapped exporter."""
-
-    def __init__(self, delegate: Any, span_export_result_success: Any):
-        self._delegate = delegate
-        self._success = span_export_result_success
-
-    def export(self, spans: Any) -> Any:
-        allowed = [span for span in spans if _is_agent_llm_span(span)]
-        if not allowed:
-            return self._success
-        return self._delegate.export(tuple(allowed))
-
-    def shutdown(self) -> None:
-        self._delegate.shutdown()
-
-    def force_flush(self, timeout_millis: int = 30000) -> bool:
-        force_flush = getattr(self._delegate, "force_flush", None)
-        if callable(force_flush):
-            try:
-                return bool(force_flush(timeout_millis=timeout_millis))
-            except TypeError:
-                return bool(force_flush())
-        return True
-
-
-class AutoGenEventSpanBridgeHandler(logging.Handler):
-    """Convert AutoGen structured event logs into OTel spans.
-
-    AutoGen emits rich LLM input/output payloads through `autogen_core.events`
-    and `autogen_agentchat.events`. This handler bridges those events into trace
-    spans so payload detail is visible in Langfuse without printing INFO payload
-    dumps to console.
+    Walks dicts/lists and masks values whose key matches the secret-key
+    pattern. Strings are returned unchanged (URL-level secret stripping for
+    Trello query params lives in the client module's ``_redact_url`` helper).
     """
+    if isinstance(value, dict):
+        return {
+            k: ("***" if (isinstance(k, str) and _SECRET_KEY_RE.search(k)) else redact_payload(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_payload(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(redact_payload(v) for v in value)
+    return value
+
+
+def _max_payload_bytes() -> int:
+    raw = os.getenv("OTEL_MAX_PAYLOAD_BYTES", "").strip()
+    if not raw:
+        return _DEFAULT_MAX_PAYLOAD_BYTES
+    try:
+        n = int(raw)
+        return n if n > 0 else _DEFAULT_MAX_PAYLOAD_BYTES
+    except ValueError:
+        return _DEFAULT_MAX_PAYLOAD_BYTES
+
+
+def truncate_for_span(text: str) -> tuple[str, bool, int]:
+    """Cap a payload string at ``OTEL_MAX_PAYLOAD_BYTES`` (default 32 KB).
+
+    Returns ``(maybe_truncated_text, was_truncated, original_byte_length)``.
+    Callers that truncate should also set ``span.body.truncated=true`` and
+    ``span.body.original_bytes=<n>`` attributes on the span.
+    """
+    if text is None:
+        return "", False, 0
+    if not isinstance(text, str):
+        text = _stringify_payload(text)
+    encoded = text.encode("utf-8", errors="replace")
+    cap = _max_payload_bytes()
+    if len(encoded) <= cap:
+        return text, False, len(encoded)
+    truncated = encoded[:cap].decode("utf-8", errors="ignore")
+    return truncated, True, len(encoded)
+
+
+def set_payload_attribute(span: Any, key: str, value: Any) -> None:
+    """Set a redacted, truncated payload attribute on a span.
+
+    ``key`` is typically ``"input.value"`` or ``"output.value"``. The matching
+    ``<key prefix>.mime_type`` attribute is set automatically. When the value
+    is truncated, ``span.body.truncated`` and ``span.body.original_bytes``
+    are also set.
+    """
+    if span is None or value is None:
+        return
+    redacted = redact_payload(value)
+    text = _stringify_payload(redacted)
+    truncated_text, was_truncated, original_bytes = truncate_for_span(text)
+    try:
+        span.set_attribute(key, truncated_text)
+        prefix = key.rsplit(".", 1)[0]
+        span.set_attribute(f"{prefix}.mime_type", _infer_mime_type(redacted))
+        if was_truncated:
+            span.set_attribute("span.body.truncated", True)
+            span.set_attribute("span.body.original_bytes", original_bytes)
+    except Exception:
+        # Best-effort: never let span instrumentation crash a real call path.
+        pass
+
+
+# ---------------------------------------------------------------------------
+# AutoGen event-log → span bridge (kept from previous implementation)
+# ---------------------------------------------------------------------------
+class AutoGenEventSpanBridgeHandler(logging.Handler):
+    """Convert AutoGen structured event logs into OTel spans."""
 
     def __init__(self) -> None:
         super().__init__(level=logging.INFO)
@@ -164,22 +228,6 @@ class AutoGenEventSpanBridgeHandler(logging.Handler):
         if "completion_tokens" in event_data:
             attrs["gen_ai.usage.completion_tokens"] = int(event_data["completion_tokens"])
 
-        messages = event_data.get("messages")
-        if messages is not None:
-            attrs["input.value"] = _stringify_payload(messages)
-            attrs["input.mime_type"] = _infer_mime_type(messages)
-        response = event_data.get("response")
-        if response is not None:
-            attrs["output.value"] = _stringify_payload(response)
-            attrs["output.mime_type"] = _infer_mime_type(response)
-
-        if "tool_name" in event_data:
-            attrs["gen_ai.tool.name"] = str(event_data.get("tool_name"))
-        if "arguments" in event_data:
-            attrs["gen_ai.tool.arguments"] = _stringify_payload(event_data.get("arguments"))
-        if "result" in event_data:
-            attrs["gen_ai.tool.result"] = _stringify_payload(event_data.get("result"))
-
         with tracer.start_as_current_span(span_name) as span:
             for key, value in attrs.items():
                 if value is None:
@@ -187,15 +235,31 @@ class AutoGenEventSpanBridgeHandler(logging.Handler):
                 try:
                     span.set_attribute(key, value)
                 except Exception:
-                    # Best-effort only: drop non-serializable attributes.
                     continue
+
+            messages = event_data.get("messages")
+            if messages is not None:
+                set_payload_attribute(span, "input.value", messages)
+            response = event_data.get("response")
+            if response is not None:
+                set_payload_attribute(span, "output.value", response)
+
+            if "tool_name" in event_data:
+                try:
+                    span.set_attribute("gen_ai.tool.name", str(event_data.get("tool_name")))
+                except Exception:
+                    pass
+            if "arguments" in event_data:
+                set_payload_attribute(span, "gen_ai.tool.arguments", event_data.get("arguments"))
+            if "result" in event_data:
+                set_payload_attribute(span, "gen_ai.tool.result", event_data.get("result"))
 
             if record.levelno >= logging.ERROR:
                 span.set_status(Status(StatusCode.ERROR, raw_message[:300]))
 
 
 def _install_autogen_event_bridge() -> None:
-    """Attach a tracing bridge for AutoGen event payload logs."""
+    """Attach the tracing bridge for AutoGen event payload logs."""
     global _event_bridge_installed
     if _event_bridge_installed:
         return
@@ -204,22 +268,32 @@ def _install_autogen_event_bridge() -> None:
 
     for logger_name in ("autogen_core.events", "autogen_agentchat.events"):
         event_logger = logging.getLogger(logger_name)
-
-        # Keep event generation enabled for trace bridging.
+        # We need INFO records to reach the bridge handler (which converts
+        # them to spans) but we DO NOT want them on console. Logger-level
+        # filtering happens before per-handler filtering, so the logger must
+        # be at INFO. To keep console quiet we drop any pre-attached stream
+        # handlers (config wires the shared console handler here for ERROR
+        # propagation; the bridge replaces that — ERROR records are still
+        # surfaced because the bridge sets span status to ERROR and Django's
+        # error middleware logs at the request layer).
         event_logger.setLevel(logging.INFO)
         event_logger.propagate = False
-
-        # Keep console behavior ERROR-only while allowing INFO to bridge traces.
-        for handler in event_logger.handlers:
-            if isinstance(handler, logging.StreamHandler):
-                handler.setLevel(logging.ERROR)
-
+        # Strip any non-bridge handlers (notably the shared console handler
+        # added by Django LOGGING) so AutoGen INFO payload events do not
+        # pollute stderr. Mutating handler.setLevel here would change the
+        # SHARED console handler used by every other namespace.
+        event_logger.handlers = [
+            h for h in event_logger.handlers if isinstance(h, AutoGenEventSpanBridgeHandler)
+        ]
         event_logger.addHandler(bridge_handler)
 
     _event_bridge_installed = True
 
 
-def get_tracer_provider():
+# ---------------------------------------------------------------------------
+# Public span helpers
+# ---------------------------------------------------------------------------
+def get_tracer_provider() -> Any:
     """Return the configured TracerProvider, or None when tracing is disabled."""
     return _tracer_provider
 
@@ -231,10 +305,10 @@ def is_tracing_enabled() -> bool:
 
 @contextmanager
 def traced_block(span_name: str, attributes: dict[str, Any] | None = None) -> Iterator[Any]:
-    """Create a best-effort OpenTelemetry span for manual trace coverage.
+    """Open an OpenTelemetry span around a block of code.
 
-    This helper never raises if OpenTelemetry is unavailable; callers can use it
-    safely around critical paths like standalone extractor calls.
+    Safe no-op when OpenTelemetry isn't importable. Sets ERROR status and
+    records the exception when the wrapped block raises.
     """
     try:
         from opentelemetry import trace
@@ -249,7 +323,10 @@ def traced_block(span_name: str, attributes: dict[str, Any] | None = None) -> It
             for key, value in attributes.items():
                 if value is None:
                     continue
-                span.set_attribute(key, value)
+                try:
+                    span.set_attribute(key, value)
+                except Exception:
+                    continue
         try:
             yield span
         except Exception as exc:
@@ -258,20 +335,144 @@ def traced_block(span_name: str, attributes: dict[str, Any] | None = None) -> It
             raise
 
 
+def traced_function(
+    span_name: str,
+    attributes: dict[str, Any] | None = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Decorator wrapping a function in ``traced_block``.
+
+    Usage:
+
+        @traced_function("service.project.create")
+        def create_project(...): ...
+    """
+    def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+        @functools.wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            with traced_block(span_name, attributes):
+                return fn(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+# ---------------------------------------------------------------------------
+# Exporter wiring (Langfuse currently; pluggable by replacing _build_exporter)
+# ---------------------------------------------------------------------------
+def _build_langfuse_exporter() -> Any | None:
+    """Return a Langfuse-backed OTLPSpanExporter, or None when env is missing."""
+    public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "").strip()
+    secret_key = os.getenv("LANGFUSE_SECRET_KEY", "").strip()
+    host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com").strip().rstrip("/")
+
+    if not public_key or not secret_key:
+        logger.info("tracing.disabled", extra={"reason": "missing_langfuse_credentials"})
+        return None
+
+    try:
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    except Exception:
+        logger.exception("tracing.import_failed", extra={"package": "otlp_http"})
+        return None
+
+    auth = base64.b64encode(f"{public_key}:{secret_key}".encode()).decode()
+    return OTLPSpanExporter(
+        endpoint=f"{host}/api/public/otel/v1/traces",
+        headers={"Authorization": f"Basic {auth}"},
+    )
+
+
+def _build_exporter() -> Any | None:
+    """Single entry point for the active OTLP exporter.
+
+    Swap this implementation (or add branches that read
+    ``OTEL_EXPORTER_OTLP_ENDPOINT`` + ``OTEL_EXPORTER_OTLP_HEADERS``) to
+    target a different OTLP backend without touching call sites.
+    """
+    return _build_langfuse_exporter()
+
+
+def _resolve_console_span_mode() -> str:
+    """Resolve the requested console span exporter mode.
+
+    Returns one of ``"off"``, ``"error"``, or ``"all"``. ``LOG_LEVEL=DEBUG``
+    implicitly upgrades the default to ``"all"`` so deep-dive sessions get
+    every span on console without flipping a second flag.
+    """
+    raw = os.getenv("OTEL_CONSOLE_EXPORTER", "").strip().lower()
+    if raw in ("1", "true", "yes", "all"):
+        return "all"
+    if raw in ("error", "errors", "err"):
+        return "error"
+    if raw in ("0", "false", "no", "off"):
+        return "off"
+    if os.getenv("LOG_LEVEL", "INFO").strip().upper() == "DEBUG":
+        return "all"
+    return "off"
+
+
+def _build_console_span_processor() -> Any | None:
+    """Return a SimpleSpanProcessor that prints spans to stderr, or None.
+
+    Mode is resolved from ``OTEL_CONSOLE_EXPORTER`` / ``LOG_LEVEL``. The
+    ``error`` mode wraps :class:`ConsoleSpanExporter` so only spans with
+    ``StatusCode.ERROR`` are printed — recorded exceptions and the full
+    span attribute set come along for free, giving an at-a-glance call
+    stack on failure.
+    """
+    mode = _resolve_console_span_mode()
+    if mode == "off":
+        return None
+
+    try:
+        from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+        from opentelemetry.trace import StatusCode
+    except Exception:
+        logger.exception("tracing.import_failed", extra={"package": "sdk_console_exporter"})
+        return None
+
+    if mode == "all":
+        exporter: Any = ConsoleSpanExporter()
+    else:
+        class _ErrorOnlyConsoleSpanExporter(ConsoleSpanExporter):
+            """Print only ERROR-status spans to stderr."""
+
+            def export(self, spans):  # type: ignore[override]
+                errs = [s for s in spans if s.status.status_code == StatusCode.ERROR]
+                if not errs:
+                    # Mirror parent's SUCCESS sentinel without importing it.
+                    from opentelemetry.sdk.trace.export import SpanExportResult
+                    return SpanExportResult.SUCCESS
+                return super().export(errs)
+
+        exporter = _ErrorOnlyConsoleSpanExporter()
+
+    return SimpleSpanProcessor(exporter)
+
+
+def _wire_auto_instrumentation() -> None:
+    """Enable Django + requests + pymongo OpenTelemetry auto-instrumentation."""
+    for module_path, class_name, package in (
+        ("opentelemetry.instrumentation.django", "DjangoInstrumentor", "django"),
+        ("opentelemetry.instrumentation.requests", "RequestsInstrumentor", "requests"),
+        ("opentelemetry.instrumentation.pymongo", "PymongoInstrumentor", "pymongo"),
+    ):
+        try:
+            module = __import__(module_path, fromlist=[class_name])
+            getattr(module, class_name)().instrument()
+        except Exception:
+            logger.exception("tracing.instrument_failed", extra={"package": package})
+
+
 def init_tracing() -> bool:
-    """Initialize Langfuse OTLP exporter once per process. Returns True on success."""
+    """Initialize the OTLP exporter once per process. Returns True on success."""
     global _initialized, _tracer_provider
 
     with _lock:
         if _initialized:
             return _tracer_provider is not None
 
-        public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "").strip()
-        secret_key = os.getenv("LANGFUSE_SECRET_KEY", "").strip()
-        host = os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com").strip().rstrip("/")
-
-        if not public_key or not secret_key:
-            logger.info("tracing.disabled", extra={"reason": "missing_langfuse_credentials"})
+        exporter = _build_exporter()
+        if exporter is None:
             _initialized = True
             return False
 
@@ -279,33 +480,36 @@ def init_tracing() -> bool:
             from opentelemetry import trace
             from opentelemetry.sdk.resources import Resource
             from opentelemetry.sdk.trace import TracerProvider
-            from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExportResult
-            from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-                OTLPSpanExporter,
-            )
+            from opentelemetry.sdk.trace.export import BatchSpanProcessor
         except Exception:
-            logger.exception("tracing.import_failed")
+            logger.exception("tracing.import_failed", extra={"package": "sdk"})
             _initialized = True
             return False
 
         try:
-            auth = base64.b64encode(f"{public_key}:{secret_key}".encode()).decode()
-            exporter = OTLPSpanExporter(
-                endpoint=f"{host}/api/public/otel/v1/traces",
-                headers={"Authorization": f"Basic {auth}"},
-            )
-            filtered_exporter: Any = AgentLlmFilteringExporter(exporter, SpanExportResult.SUCCESS)
             resource = Resource.create({
                 "service.name": os.getenv("OTEL_SERVICE_NAME", "product-discovery"),
             })
             provider = TracerProvider(resource=resource)
-            provider.add_span_processor(BatchSpanProcessor(filtered_exporter))
+            provider.add_span_processor(BatchSpanProcessor(exporter))
+
+            console_processor = _build_console_span_processor()
+            if console_processor is not None:
+                provider.add_span_processor(console_processor)
+
             trace.set_tracer_provider(provider)
             _tracer_provider = provider
+
+            _wire_auto_instrumentation()
             _install_autogen_event_bridge()
+
             logger.info(
                 "tracing.enabled",
-                extra={"host": host, "service_name": resource.attributes.get("service.name")},
+                extra={
+                    "service_name": resource.attributes.get("service.name"),
+                    "max_payload_bytes": _max_payload_bytes(),
+                    "console_span_mode": _resolve_console_span_mode(),
+                },
             )
         except Exception:
             logger.exception("tracing.setup_failed")

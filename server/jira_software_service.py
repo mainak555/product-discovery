@@ -8,6 +8,9 @@ from . import jira_client
 logger = logging.getLogger(__name__)
 
 
+from agents.tracing import traced_function
+
+
 def _gen_temp_id():
     return f"T{secrets.token_hex(4)}"
 
@@ -177,6 +180,7 @@ def repair_hierarchy(items):
     return items
 
 
+@traced_function("service.jira.software.push_issues")
 def push_issues(site_url, email, api_key, project_key, normalized_items):
     """Push normalized Jira Software items to Jira."""
     return jira_client.push_issues_software(site_url, email, api_key, project_key, normalized_items)

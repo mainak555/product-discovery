@@ -10,7 +10,9 @@ class ServerConfig(AppConfig):
 
     def ready(self):
         """One-shot startup hooks: tracing init and stale-session reset."""
-        # Initialize Langfuse OpenTelemetry tracing for AutoGen (env-gated).
+        # Initialize OpenTelemetry tracing (env-gated). This wires the OTLP
+        # exporter (currently Langfuse), Django/requests/pymongo auto-
+        # instrumentation, and the AutoGen event-log -> span bridge.
         try:
             from agents.tracing import init_tracing
             init_tracing()

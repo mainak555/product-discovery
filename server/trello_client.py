@@ -3,12 +3,19 @@ Pure Trello REST API client — no Django imports.
 
 Every function takes (api_key, token) plus endpoint-specific params.
 All responses are simplified dicts; errors raise ValueError.
+
+Per-call HTTP detail (timing, status, request/response bodies) is captured
+on OpenTelemetry spans created by the auto-instrumented ``requests``
+library; this module enriches the active span with the redacted action +
+payload context. Only ERROR records are emitted to console.
 """
 
 import logging
 import re
 
 import requests
+
+from agents.tracing import set_payload_attribute
 
 logger = logging.getLogger(__name__)
 
@@ -30,24 +37,47 @@ def _auth_params(api_key, token):
     return {"key": api_key, "token": token}
 
 
+def _current_span():
+    """Return the active OTel span, or None when tracing is unavailable."""
+    try:
+        from opentelemetry import trace
+    except Exception:
+        return None
+    span = trace.get_current_span()
+    return span if span and span.is_recording() else None
+
+
+def _enrich_span(action, resp):
+    """Attach action label + redacted request/response bodies to the active span."""
+    span = _current_span()
+    if span is None:
+        return
+    try:
+        span.set_attribute("trello.action", action)
+        span.set_attribute("http.status_code", resp.status_code)
+        url = _redact_url(getattr(resp.request, "url", "") or "")
+        if url:
+            span.set_attribute("http.url", url)
+    except Exception:
+        pass
+
+    request_body = getattr(getattr(resp, "request", None), "body", None)
+    if request_body:
+        set_payload_attribute(span, "input.value", request_body)
+    if resp.text:
+        set_payload_attribute(span, "output.value", resp.text)
+
+
 def _check(resp, action):
-    """Log the call (success or error) and raise ValueError on non-2xx."""
+    """Enrich the active span and raise ValueError on non-2xx responses."""
+    _enrich_span(action, resp)
+
+    if resp.ok:
+        return
+
     method = getattr(resp.request, "method", "?") if resp.request else "?"
     url = _redact_url(getattr(resp.request, "url", "") or "")
     elapsed_ms = int(resp.elapsed.total_seconds() * 1000) if resp.elapsed else 0
-
-    if resp.ok:
-        logger.info(
-            "trello.api.call",
-            extra={
-                "action": action,
-                "method": method,
-                "url": url,
-                "status": resp.status_code,
-                "elapsed_ms": elapsed_ms,
-            },
-        )
-        return
 
     detail = resp.text[:200] if resp.text else resp.reason
     logger.error(

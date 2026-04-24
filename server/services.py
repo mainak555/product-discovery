@@ -28,6 +28,8 @@ from .model_catalog import (
 )
 from .schemas import validate_project, validate_chat_session
 
+from agents.tracing import traced_function
+
 
 class ProjectDeletionBlocked(ValueError):
     """Raised when a project cannot be deleted due to dependent records."""
@@ -307,6 +309,7 @@ def get_project_raw(project_id):
     return doc
 
 
+@traced_function("service.project.create")
 def create_project(data):
     """
     Validate and insert a new project configuration.
@@ -341,6 +344,7 @@ def create_project(data):
     return normalized
 
 
+@traced_function("service.project.update")
 def update_project(project_id, data):
     """
     Validate and update an existing project configuration.
@@ -421,6 +425,7 @@ def _restore_masked_secrets(data, existing):
                     type_cfg["api_key"] = existing_type.get("api_key", "")
 
 
+@traced_function("service.project.delete")
 def delete_project(project_id):
     """Delete a project by _id (hex string). Raises ValueError if not found."""
     try:
@@ -441,6 +446,7 @@ def delete_project(project_id):
     logger.info("project.deleted", extra={"project_id": project_id})
 
 
+@traced_function("service.project.clone")
 def clone_project(project_id):
     """
     Clone an existing project as '{name} - Copy'.
@@ -531,6 +537,7 @@ def _ensure_discussion_ids(doc, col=None):
     return doc
 
 
+@traced_function("service.chat.create")
 def create_chat_session(project_id, description):
     """Insert a new chat session. Returns the normalized document."""
     cleaned = validate_chat_session({"project_id": project_id, "description": description})
@@ -568,6 +575,7 @@ def set_session_status(session_id, status):
     col.update_one({"_id": oid}, update)
 
 
+@traced_function("service.chat.append_messages")
 def append_messages(session_id, messages):
     """Append a list of message dicts to session discussions."""
     try:
@@ -635,6 +643,7 @@ def get_discussion_export_payload(session_id, discussion_id, provider, subkey=No
     raise ValueError("Discussion item not found for this session.")
 
 
+@traced_function("service.discussion.set_export_payload")
 def set_discussion_export_payload(session_id, discussion_id, provider, payload, subkey=None):
     """Persist export payload for a discussion/provider (optional subkey) and return saved payload."""
     if not isinstance(payload, dict):
@@ -696,6 +705,7 @@ def set_discussion_export_payload(session_id, discussion_id, provider, payload, 
     return payload
 
 
+@traced_function("service.chat.save_agent_state")
 def save_agent_state(session_id, state):
     """Persist serialized AutoGen TeamState for a chat session."""
     if not isinstance(state, dict):
@@ -772,6 +782,7 @@ def get_chat_session(session_id):
     return normalize_chat_session(doc)
 
 
+@traced_function("service.chat.delete")
 def delete_chat_session(session_id):
     """Delete a chat session by _id hex string. Raises ValueError if not found."""
     try:
