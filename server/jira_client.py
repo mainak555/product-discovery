@@ -28,7 +28,7 @@ import re
 
 import requests
 
-from core.tracing import set_payload_attribute
+from core.http_tracing import instrument_http_response
 
 logger = logging.getLogger(__name__)
 
@@ -63,36 +63,17 @@ def _auth_headers(email, api_key):
     }
 
 
-def _check(resp, action):
+def _handle_api_response(resp, action):
     """Enrich the active span and raise ValueError on non-2xx responses.
 
     Never logs the Authorization header or request body to console.
     """
-    span = None
-    try:
-        from opentelemetry import trace
-        candidate = trace.get_current_span()
-        if candidate and candidate.is_recording():
-            span = candidate
-    except Exception:
-        span = None
-
-    if span is not None:
-        try:
-            span.set_attribute("jira.action", action)
-            span.set_attribute("http.status_code", resp.status_code)
-            url = getattr(resp.request, "url", "") or ""
-            if url:
-                span.set_attribute("http.url", url)
-        except Exception:
-            pass
-        request_body = getattr(getattr(resp, "request", None), "body", None)
-        if request_body:
-            set_payload_attribute(span, "input.value", request_body)
-        if resp.text:
-            set_payload_attribute(span, "output.value", resp.text)
-
     if resp.ok:
+        instrument_http_response(
+            resp,
+            provider="jira",
+            action=action,
+        )
         return
 
     method = getattr(resp.request, "method", "?") if resp.request else "?"
@@ -100,18 +81,32 @@ def _check(resp, action):
     elapsed_ms = int(resp.elapsed.total_seconds() * 1000) if resp.elapsed else 0
 
     detail = ""
+    error_messages = []
+    field_errors = {}
     try:
         body = resp.json()
-        detail = body.get("errorMessages", [])
+        error_messages = body.get("errorMessages", []) or []
+        field_errors = body.get("errors") or {}
+        detail = error_messages
         if detail:
             detail = " ".join(detail)
         else:
-            errors = body.get("errors") or {}
-            detail = "; ".join(f"{k}: {v}" for k, v in errors.items()) if errors else ""
+            detail = "; ".join(f"{k}: {v}" for k, v in field_errors.items()) if field_errors else ""
     except Exception:
         pass
     if not detail:
         detail = resp.text[:200] if resp.text else resp.reason
+
+    _, detail = instrument_http_response(
+        resp,
+        provider="jira",
+        action=action,
+        detail=detail,
+        error_messages=error_messages,
+        field_errors=field_errors,
+    )
+    detail = detail or "HTTP error"
+
     logger.error(
         "jira.api.error",
         extra={
@@ -138,7 +133,7 @@ def verify_credentials(site_url, email, api_key):
     """
     url = f"{_base_url(site_url)}/rest/api/3/myself"
     resp = requests.get(url, headers=_auth_headers(email, api_key), timeout=15)
-    _check(resp, "verify_credentials")
+    _handle_api_response(resp, "verify_credentials")
     data = resp.json()
     return {
         "account_id": data.get("accountId", ""),
@@ -164,7 +159,7 @@ def get_projects(site_url, email, api_key, type_key=None):
 
     url = f"{_base_url(site_url)}/rest/api/3/project/search"
     resp = requests.get(url, headers=_auth_headers(email, api_key), params=params, timeout=15)
-    _check(resp, "get_projects")
+    _handle_api_response(resp, "get_projects")
     data = resp.json()
     projects = []
     for p in data.get("values") or []:
@@ -189,7 +184,7 @@ def get_project_priorities(site_url, email, api_key, project_key=None):
     """Return priorities available in the Jira instance (project-aware fallback)."""
     url = f"{_base_url(site_url)}/rest/api/3/priority"
     resp = requests.get(url, headers=_auth_headers(email, api_key), timeout=15)
-    _check(resp, "get_project_priorities")
+    _handle_api_response(resp, "get_project_priorities")
     out = []
     seen = set()
     for row in resp.json() or []:
@@ -220,7 +215,7 @@ def get_project_sprints(site_url, email, api_key, project_key):
         params={"projectKeyOrId": project_key, "maxResults": 50},
         timeout=15,
     )
-    _check(boards_resp, "get_project_sprints.boards")
+    _handle_api_response(boards_resp, "get_project_sprints.boards")
     boards = boards_resp.json().get("values") or []
 
     sprint_map = {}
@@ -238,6 +233,12 @@ def get_project_sprints(site_url, email, api_key, project_key):
             timeout=15,
         )
         if not sprints_resp.ok:
+            instrument_http_response(
+                sprints_resp,
+                provider="jira",
+                action="get_project_sprints.sprints",
+                detail=_format_jira_error(sprints_resp),
+            )
             continue
         for sprint in (sprints_resp.json().get("values") or []):
             sid = str(sprint.get("id") or "").strip()
@@ -280,7 +281,7 @@ def get_project_epics(site_url, email, api_key, project_key):
         json={"jql": jql, "fields": ["summary"], "maxResults": 100},
         timeout=20,
     )
-    _check(resp, "get_project_epics")
+    _handle_api_response(resp, "get_project_epics")
 
     out = []
     for issue in resp.json().get("issues") or []:
@@ -315,7 +316,7 @@ def get_project_existing_issues(site_url, email, api_key, project_key):
         json={"jql": jql, "fields": ["summary", "issuetype"], "maxResults": 500},
         timeout=20,
     )
-    _check(resp, "get_project_existing_issues")
+    _handle_api_response(resp, "get_project_existing_issues")
 
     out = []
     for issue in resp.json().get("issues") or []:
@@ -336,7 +337,7 @@ def get_service_desks(site_url, email, api_key):
     """
     url = f"{_base_url(site_url)}/rest/servicedeskapi/servicedesk"
     resp = requests.get(url, headers=_auth_headers(email, api_key), timeout=15)
-    _check(resp, "get_service_desks")
+    _handle_api_response(resp, "get_service_desks")
     data = resp.json()
     desks = []
     for d in data.get("values") or []:
@@ -356,7 +357,7 @@ def get_service_desk_request_types(site_url, email, api_key, service_desk_id):
     """
     url = f"{_base_url(site_url)}/rest/servicedeskapi/servicedesk/{service_desk_id}/requesttype"
     resp = requests.get(url, headers=_auth_headers(email, api_key), timeout=15)
-    _check(resp, "get_request_types")
+    _handle_api_response(resp, "get_request_types")
     data = resp.json()
     types = []
     for t in data.get("values") or []:
@@ -398,6 +399,12 @@ def _get_issue_types(site_url, email, api_key, project_key):
         timeout=15,
     )
     if not resp.ok:
+        instrument_http_response(
+            resp,
+            provider="jira",
+            action="get_issue_types",
+            detail=_format_jira_error(resp),
+        )
         return []
     data = resp.json()
     for project in data.get("projects") or []:
@@ -603,6 +610,12 @@ def _create_software_issue(base, headers, fields, parent_key, allow_epic_link=Tr
     """
     url = f"{base}/rest/api/3/issue"
     resp = requests.post(url, headers=headers, json={"fields": fields}, timeout=20)
+    instrument_http_response(
+        resp,
+        provider="jira",
+        action="push_issues_software.create_issue.parent",
+        detail=_format_jira_error(resp) if not resp.ok else None,
+    )
     attempts = [("parent" if parent_key else "", resp.status_code)]
 
     if resp.ok:
@@ -620,6 +633,12 @@ def _create_software_issue(base, headers, fields, parent_key, allow_epic_link=Tr
         retry_fields = {k: v for k, v in fields.items() if k != "parent"}
         retry_fields["customfield_10014"] = parent_key
         resp2 = requests.post(url, headers=headers, json={"fields": retry_fields}, timeout=20)
+        instrument_http_response(
+            resp2,
+            provider="jira",
+            action="push_issues_software.create_issue.epic_link",
+            detail=_format_jira_error(resp2) if not resp2.ok else None,
+        )
         attempts.append(("epic_link", resp2.status_code))
         if resp2.ok:
             return resp2, "epic_link", attempts
@@ -630,6 +649,12 @@ def _create_software_issue(base, headers, fields, parent_key, allow_epic_link=Tr
     # least created. The caller appends a warning describing this.
     bare_fields = {k: v for k, v in fields.items() if k not in ("parent", "customfield_10014")}
     resp3 = requests.post(url, headers=headers, json={"fields": bare_fields}, timeout=20)
+    instrument_http_response(
+        resp3,
+        provider="jira",
+        action="push_issues_software.create_issue.no_parent",
+        detail=_format_jira_error(resp3) if not resp3.ok else None,
+    )
     attempts.append(("none", resp3.status_code))
     if resp3.ok:
         return resp3, "none", attempts
@@ -650,6 +675,12 @@ def _assign_issue_to_sprint(base, headers, sprint_value, issue_key):
         headers=headers,
         json={"issues": [issue_key]},
         timeout=20,
+    )
+    instrument_http_response(
+        resp,
+        provider="jira",
+        action="push_issues_software.assign_sprint",
+        detail=_format_jira_error(resp) if not resp.ok else None,
     )
     if resp.ok:
         return ""
@@ -962,9 +993,21 @@ def push_issues_service_desk(site_url, email, api_key, service_desk_id, items):
                 msg = err_msg or f"HTTP {resp.status_code}"
             except Exception:
                 msg = resp.text[:200] or f"HTTP {resp.status_code}"
+            instrument_http_response(
+                resp,
+                provider="jira",
+                action="push_issues_service_desk.create_request",
+                detail=msg,
+            )
             warnings.append(f"Failed to create request: {msg}")
             results.append({"issue_key": None, "summary": summary, "url": "", "warnings": warnings})
             continue
+
+        instrument_http_response(
+            resp,
+            provider="jira",
+            action="push_issues_service_desk.create_request",
+        )
 
         data = resp.json()
         issue_key = (data.get("issueKey") or data.get("key") or "")
@@ -1049,9 +1092,21 @@ def push_issues_business(site_url, email, api_key, project_key, items):
                 msg = (err_msg + " " + err_detail).strip() or f"HTTP {resp.status_code}"
             except Exception:
                 msg = resp.text[:200] or f"HTTP {resp.status_code}"
+            instrument_http_response(
+                resp,
+                provider="jira",
+                action="push_issues_business.create_issue",
+                detail=msg,
+            )
             warnings.append(f"Failed to create issue: {msg}")
             results.append({"issue_key": None, "summary": summary, "url": "", "warnings": warnings})
             continue
+
+        instrument_http_response(
+            resp,
+            provider="jira",
+            action="push_issues_business.create_issue",
+        )
 
         data = resp.json()
         issue_key = data.get("key", "")

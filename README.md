@@ -65,7 +65,8 @@ The container runs `uvicorn` (ASGI) by default, which is required for SSE stream
 | `OTEL_MAX_PAYLOAD_BYTES` | Per-attribute span payload truncation cap (bytes) | `32768` |
 | `OTEL_CONSOLE_EXPORTER` | Console span output mode (`off` / `error` / `all`). See [docs/observability.md](docs/observability.md). | `off` |
 | `OTEL_INSTRUMENT_HTTP` | Django + outbound `requests` auto-instrumentation (app/API spans). | `on` |
-| `OTEL_INSTRUMENT_PYMONGO` | Pymongo auto-instrumentation (one span per Mongo command — high cardinality). Enable for query/connection diagnostics. | `off` |
+| `OTEL_HTTP_LOG_BODY` | Controls request/response payload capture for successful (2xx) outbound HTTP API spans via `core/http_tracing.py`. Non-2xx payloads are always captured. | `on` |
+| `OTEL_INSTRUMENT_MONGO` | Pymongo auto-instrumentation (one span per Mongo command — high cardinality). Enable for query/connection diagnostics. | `off` |
 | `OTEL_INSTRUMENT_AGENTS` | AutoGen event-log → span bridge (LLM calls, prompts, tool spans). | `on` |
 | `OPENAI_API_KEY` | API key for direct OpenAI models | *(required for `openai` models)* |
 | `OPENAI_API_URL` | Endpoint fallback for `openai` models when `endpoint` is omitted in `agent_models.json` | *(optional)* |
@@ -89,6 +90,17 @@ propagated `X-Request-ID` header. Logs and traces are intentionally split:
 
 - **Logs** — JSON to stderr, every line carries `request_id`, `trace_id`, `span_id`. Lifecycle events + `WARNING`+ only; per-call HTTP success detail lives on spans.
 - **Traces** — full request/response payloads (redacted, truncated at 32 KB) shipped to the configured OTLP backend (Langfuse today; pluggable). `OTEL_CONSOLE_EXPORTER=error` additionally dumps any failed span to stderr with its full attribute set + stacktrace.
+
+Outbound integration clients (Trello, Jira, and future providers) must use the
+shared helper `core/http_tracing.py` (`instrument_http_response`) so request,
+response, and error-detail span attributes are emitted consistently without
+duplicating provider-local span plumbing.
+
+Set `OTEL_HTTP_LOG_BODY=off` to skip request/response payload capture
+for successful outbound HTTP calls while still capturing full payload details
+for non-2xx responses. This toggle applies only to integration HTTP client
+span payload capture and does not affect AutoGen/LLM tracing controlled by
+`OTEL_INSTRUMENT_AGENTS`.
 
 ### Two console dials
 
@@ -133,15 +145,15 @@ on the `tracing.enabled` startup log line.
 | Category | Env var | Default | Produces |
 |---|---|---|---|
 | HTTP / API (Django + `requests`) | `OTEL_INSTRUMENT_HTTP` | `on` | One span per Django request and per outbound HTTP call (Trello, Jira). |
-| Database (pymongo) | `OTEL_INSTRUMENT_PYMONGO` | `off` | One span per Mongo command. Off by default — enable for DB diagnostics. |
+| Database (pymongo) | `OTEL_INSTRUMENT_MONGO` | `off` | One span per Mongo command. Off by default — enable for DB diagnostics. |
 | LLM / Agents (AutoGen bridge) | `OTEL_INSTRUMENT_AGENTS` | `on` | LLM calls, prompts, model responses, tool invocations, token usage. |
 | Service mutations (`@traced_function`) | *(always on)* | n/a | Explicit service-layer spans (`service.project.create`, `service.jira.<type>.push_issues`, …). |
 
 Useful combos:
 
-- Mongo deep dive: `OTEL_INSTRUMENT_PYMONGO=1`
+- Mongo deep dive: `OTEL_INSTRUMENT_MONGO=1`
 - Silence LLM payloads (e.g. PII review): `OTEL_INSTRUMENT_AGENTS=0`
-- Pure-agent latency profiling, no HTTP/Mongo noise: `OTEL_INSTRUMENT_HTTP=0 OTEL_INSTRUMENT_PYMONGO=0`
+- Pure-agent latency profiling, no HTTP/Mongo noise: `OTEL_INSTRUMENT_HTTP=0 OTEL_INSTRUMENT_MONGO=0`
 
 Full architecture, env vars, span payload contract, redaction rules,
 backend-swap pattern, and validation checklist are in

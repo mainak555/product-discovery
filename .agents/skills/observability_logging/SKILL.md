@@ -44,17 +44,32 @@ serve different purposes:
 | `server/services.py` | `project.created`/`project.updated`/`project.deleted` (INFO with `project_id`), `chat.session.started`/`chat.session.ended` (INFO with `session_id`), validation `WARNING` before raising `ValueError`. Public mutation entry points wrapped with `@traced_function("service.<area>.<op>")`. |
 | `server/trello_service.py`, `server/jira_service.py`, `server/jira_*_service.py` | Public extract/push/verify/metadata-fetch entry points wrapped with `@traced_function`. Credential resolution failures as `WARNING`; currently-swallowed `ValueError` fallbacks must call `logger.warning("...fallback", exc_info=True)` instead of silently passing. |
 
-## HTTP Client Pattern (Trello / Jira)
+## HTTP Client Pattern (Trello / Jira / Future Providers)
 The `requests` library is auto-instrumented; every outbound call already gets
-a span. The client modules just enrich that span and emit ERROR records on
-non-2xx.
+a span. Client modules MUST use the shared helper in `core/http_tracing.py`
+instead of implementing provider-local span helpers.
 
-1. Keep `_check(resp, action)` helpers minimal:
-   - On the active span (via `opentelemetry.trace.get_current_span()`), set `<provider>.action`, `http.url` (redacted for Trello), and `http.status_code`.
-   - Set `input.value` (request body) and `output.value` (response text) via `set_payload_attribute()` — both are auto-redacted and auto-truncated.
-   - Do **not** emit a `*.api.call` INFO log on success. Only emit `*.api.error` on non-2xx, with status, elapsed_ms, and a 500-char body snippet. Then raise `ValueError`.
-2. Trello URLs must always be passed through `_redact_url()` before any log/span attribute.
-3. Jira clients must never log or attach the `Authorization` header to spans.
+1. Use `instrument_http_response(resp, provider=..., action=...)` for every
+   outbound response path (success and error).
+2. Name response-handler helpers meaningfully (for example
+   `_handle_api_response`) instead of generic names like `_check`.
+3. For non-2xx responses, pass parsed details into the same helper:
+   - `detail="..."`
+   - optional `error_messages=[...]`
+   - optional `field_errors={...}`
+4. For fallback branches that intentionally continue (no raised exception),
+   still call `instrument_http_response(..., detail=...)` so spans show full
+   error body/details instead of metadata-only failures.
+5. `OTEL_HTTP_LOG_BODY` controls whether 2xx outbound HTTP spans
+   include request/response bodies (`input.value` / `output.value`). Default
+   is on; when off, non-2xx responses must still capture full payload details.
+6. Do **not** emit a `*.api.call` INFO log on success. Only emit
+   `*.api.error` on non-2xx with status, elapsed_ms, and a 500-char snippet.
+7. Trello URLs must always be passed through `_redact_url()` before any
+   log/span URL attribute.
+8. Jira clients must never log or attach the `Authorization` header to spans.
+9. Do not add local duplicated span helper functions (`_current_span`,
+   `_enrich_span`, `_mark_span_error`) in provider clients.
 
 ## Agent Runtime Events Catalog
 | Module | Required Events |
@@ -71,7 +86,7 @@ non-2xx.
 4. Async tasks awaited within a request inherit the contextvar automatically. Do not pass request ids manually.
 
 ## Tracing Architecture
-1. `core/tracing.py` owns all OpenTelemetry wiring. Nothing else imports OpenTelemetry directly except for `trace.get_current_span()` reads in HTTP client `_check` helpers.
+1. `core/tracing.py` owns all OpenTelemetry wiring. Integration clients should use `core/http_tracing.py` (`instrument_http_response`) rather than importing OpenTelemetry directly.
 2. `init_tracing()` runs exactly once from `server/apps.py` `ServerConfig.ready()`. Idempotent across reloads. Never raises on tracing-setup failure — logs `EXCEPTION` and continues.
 3. Auto-instrumentation packages — `opentelemetry-instrumentation-django`, `-requests`, `-pymongo` — are wired inside `init_tracing()` via `_wire_auto_instrumentation()`. Each call is wrapped in try/except → `tracing.instrument_failed` exception log. Each package is gated by an env-var category toggle (see below).
 
@@ -81,7 +96,7 @@ Each span-producing layer is gated by an env var so operators can dial verbosity
 | Category | Env var | Default | Source |
 |---|---|---|---|
 | HTTP / API (Django + outbound `requests`) | `OTEL_INSTRUMENT_HTTP` | `on` | `_http_tracing_enabled()` in `core/tracing.py` — gates `DjangoInstrumentor` + `RequestsInstrumentor`. |
-| Database (pymongo) | `OTEL_INSTRUMENT_PYMONGO` | `off` | `_pymongo_tracing_enabled()` — one span per Mongo command, off by default to keep trace volume sane. |
+| Database (pymongo) | `OTEL_INSTRUMENT_MONGO` | `off` | `_pymongo_tracing_enabled()` — one span per Mongo command, off by default to keep trace volume sane. |
 | LLM / Agents (AutoGen event bridge) | `OTEL_INSTRUMENT_AGENTS` | `on` | `_agents_tracing_enabled()` — gates `_install_autogen_event_bridge()`. When off, the bridge never attaches and LLM/tool spans are not produced. |
 | Service mutations (`@traced_function`) | *(always on)* | n/a | Explicit per-callsite spans — cheap, namespaced, never gated. |
 
