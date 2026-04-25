@@ -51,6 +51,13 @@ See [docs/jira_integration.md](docs/jira_integration.md) for:
 - Export modal flow and push response shape
 - API endpoint reference (project-scoped and session-scoped)
 
+## Export Schema Contracts
+
+See [docs/export_schema_contracts.md](docs/export_schema_contracts.md) for:
+- Required README contract sections for each export provider
+- Required provider integration doc contract sections
+- Change-management rule when schema or push payload behavior changes
+
 ## Agent Teams & Runtime
 
 See [docs/agent_teams.md](docs/agent_teams.md) for:
@@ -121,3 +128,4 @@ See [docs/observability.md](docs/observability.md) for:
 45. **OpenTelemetry is the project-wide tracing standard**: all I/O layers emit spans into a single trace per request via `@traced_function` / `traced_block` from `core/tracing.py`, plus three category-gated auto-instrumentation toggles — `OTEL_INSTRUMENT_HTTP` (Django + `requests`, default **on**), `OTEL_INSTRUMENT_PYMONGO` (pymongo, default **off** — high-volume DB spans), `OTEL_INSTRUMENT_AGENTS` (AutoGen event-log → span bridge, default **on**). The OTLP exporter is **pluggable** — Langfuse is wired today via `_build_langfuse_exporter()`; swapping backends is a one-function change in `_build_exporter()`. Span payloads are always set through `set_payload_attribute()` so redaction (`redact_payload()`) and truncation (`OTEL_MAX_PAYLOAD_BYTES`, default 32 KB) run uniformly. Console span output is opt-in via `OTEL_CONSOLE_EXPORTER` (`off` / `error` / `all`); `LOG_LEVEL=DEBUG` upgrades the default to `all`. Active toggles are echoed on the `tracing.enabled` startup log line (`instrument_http`, `instrument_pymongo`, `instrument_agents`, `console_span_mode`). Treat the OTLP backend as PII-bearing (Trello card descriptions, Jira issue summaries are forwarded as payloads). Full contract, env vars, and validation checklist live in [docs/observability.md](docs/observability.md).
 46. **Observability skill is required for new I/O code**: before adding a new HTTP client, service module, MongoDB access path, agent-runtime entry point, or model client wrapper, follow [`.agents/skills/observability_logging/SKILL.md`](.agents/skills/observability_logging/SKILL.md) for the logger, event-name, redaction, request-ID, span-payload, and tracing-decorator contracts.
 47. **Model endpoint fallback contract is mandatory**: in `agents/factory.py`, endpoint resolution order is JSON `endpoint` first, then `{PROVIDER_UPPER}_API_URL` env fallback. API key resolution remains `{PROVIDER_UPPER}_API_KEY`. Azure providers (`azure_openai`, `azure_anthropic`) must still fail fast if endpoint is missing after fallback.
+48. **Export schema documentation contract is mandatory**: every export popup provider must document its required extracted JSON schema in `README.md` (admin-facing) and in a provider-specific integration doc under `docs/` (developer-facing). Any schema or push-payload behavior change must update both docs in the same PR. Follow [docs/export_schema_contracts.md](docs/export_schema_contracts.md), [`.agents/skills/export_popup_base/SKILL.md`](.agents/skills/export_popup_base/SKILL.md), and [`.agents/skills/export_provider_adapter/SKILL.md`](.agents/skills/export_provider_adapter/SKILL.md).

@@ -164,3 +164,76 @@ See [AGENTS.md](AGENTS.md) for full architecture and development instructions.
 - For Azure models, the model key is the deployment name. Azure endpoints remain required, but may now come from either JSON `endpoint` or `AZURE_OPENAI_API_URL` / `AZURE_ANTHROPIC_API_URL`.
 - The AutoGen runtime lives in the root `agents/` package, separate from the Django `server/` app.
 - Agent execution is streamed over SSE (`/chat/sessions/<id>/run/`). The server **must** run under ASGI (`uvicorn`) for real-time streaming; WSGI will buffer the entire response before sending.
+
+---
+
+## Export Schema Contract (Trello)
+
+The Trello export popup supports project-specific extraction prompts, but the extracted JSON must always follow the same schema contract so the exporter can parse and push cards reliably.
+
+### Why this matters
+
+- Prompt wording can change per project and per `export_mapping.system_prompt`
+- Export parsing logic is schema-based, not prose-based
+- If extraction output shape drifts, save/export actions can fail or produce partial pushes
+
+### Required extracted JSON shape
+
+```json
+[
+	{
+		"card_title": "string",
+		"card_description": "string",
+		"checklists": [
+			{
+				"name": "string",
+				"items": [
+					{
+						"title": "string",
+						"checked": false
+					}
+				]
+			}
+		],
+		"custom_fields": [
+			{
+				"field_name": "string",
+				"field_type": "text|number|date|checkbox|list",
+				"value": "string"
+			}
+		],
+		"labels": ["string"],
+		"priority": "Low|Medium|High|Critical",
+		"confidence_score": 0.0
+	}
+]
+```
+
+### Field contract
+
+| Path | Type | Required | Notes |
+|---|---|---|---|
+| `<root>` | array | Yes | Root list of Trello card objects. |
+| `[].card_title` | string | Yes | Trello card name. Empty values normalize to `Untitled`. |
+| `[].card_description` | string | No | Trello card description. Defaults to empty string. |
+| `[].checklists` | array | No | Checklist groups for the card. |
+| `[].checklists[].name` | string | No | Checklist name. Defaults to `Tasks`. |
+| `[].checklists[].items` | array | No | Checklist items. |
+| `[].checklists[].items[].title` | string | Yes (when item exists) | Checklist item text. Empty titles are dropped. |
+| `[].checklists[].items[].checked` | boolean | No | Defaults to `false` when omitted. |
+| `[].custom_fields` | array | No | Dynamic text-only metadata fields. |
+| `[].custom_fields[].field_name` | string | Yes (when field exists) | Empty names are dropped. |
+| `[].custom_fields[].field_type` | string | No | Trello supports `text`, `number`, `date`, `checkbox`, `list`; current exporter normalization stores `text`. |
+| `[].custom_fields[].value` | string | No | Defaults to empty string. |
+| `[].labels` | array | No | Case-insensitive deduplicated labels. |
+| `[].priority` | string | No | Accepted values: `Low`, `Medium`, `High`, `Critical` (case-insensitive input). |
+| `[].confidence_score` | number | No | Clamped to range `0.0` to `1.0`. |
+
+### Compatibility rules
+
+1. Trello extraction prompt output must be a JSON array of card objects matching the schema above.
+2. Export endpoint responses continue to return `{items: [...]}` where `items` contains normalized card objects.
+3. Legacy extraction keys (`title`, `description`, `children`) are accepted for backward compatibility, but new prompts should emit `card_title`, `card_description`, and `checklists`.
+4. Additional fields may be present, but Trello exporter behavior is defined only for the contract fields above.
+
+For implementation details, endpoint flow, and mapping behavior, see [docs/trello_integration.md](docs/trello_integration.md). For the cross-provider documentation standard used by all export popups, see [docs/export_schema_contracts.md](docs/export_schema_contracts.md).
