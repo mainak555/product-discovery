@@ -285,7 +285,7 @@ Jira Software export supports hierarchical issue trees. The extracted or edited 
 | `<root>` | array | Yes | Root list of Jira Software issue objects. |
 | `[].temp_id` | string | Yes | Client-stable id used only for batch parent mapping. Auto-generated when missing. |
 | `[].parent_temp_id` | string\|null | No | Parent item id. `null` means root. |
-| `[].existing_issue_key` | string | No | Empty string means create new issue. Non-empty value means reuse existing Jira issue and skip create for that row. |
+| `[].existing_issue_key` | string | No | Empty string means create new issue. Non-empty value means update the selected Jira issue using current card fields. |
 | `[].summary` | string | Yes | Jira issue summary. Empty values normalize to `Untitled`. |
 | `[].description` | string | No | Plain text; wrapped to ADF at push time. |
 | `[].issue_type` | string | Yes | Intended issue type. Resolved against destination project issue-type scheme. |
@@ -301,7 +301,7 @@ Jira Software export supports hierarchical issue trees. The extracted or edited 
 
 1. Hierarchy contract is `temp_id` + `parent_temp_id` only; do not store `depth_level`.
 2. Push runs BFS and returns result rows echoing `temp_id` for correlation.
-3. If `existing_issue_key` is set, push reuses the Jira issue (no create), maps `temp_id` to that key, and still allows descendants to link through `temp_to_key`.
+3. If `existing_issue_key` is set, push updates the selected Jira issue, maps `temp_id` to that key, and still allows descendants to link through `temp_to_key`.
 4. Unknown extra fields may be present in payloads, but exporter behavior is defined only for the schema above.
 
 For full endpoint and behavior details, see [docs/jira_integration.md](docs/jira_integration.md).

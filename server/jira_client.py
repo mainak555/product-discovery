@@ -302,7 +302,7 @@ def get_project_existing_issues(site_url, email, api_key, project_key):
     """Return existing Jira issues for a project.
 
     Uses ``/rest/api/3/search/jql`` and returns rows shaped as:
-    ``[{key, summary, issue_type}]``.
+    ``[{key, summary, issue_type, parent_key}]``.
     """
     project_key = (project_key or "").strip()
     if not project_key:
@@ -313,7 +313,7 @@ def get_project_existing_issues(site_url, email, api_key, project_key):
     resp = requests.post(
         url,
         headers=_auth_headers(email, api_key),
-        json={"jql": jql, "fields": ["summary", "issuetype"], "maxResults": 500},
+        json={"jql": jql, "fields": ["summary", "issuetype", "parent"], "maxResults": 500},
         timeout=20,
     )
     _handle_api_response(resp, "get_project_existing_issues")
@@ -321,11 +321,13 @@ def get_project_existing_issues(site_url, email, api_key, project_key):
     out = []
     for issue in resp.json().get("issues") or []:
         key = str(issue.get("key") or "").strip()
-        summary = str(((issue.get("fields") or {}).get("summary") or "")).strip()
-        issue_type = str((((issue.get("fields") or {}).get("issuetype") or {}).get("name") or "")).strip()
+        fields = issue.get("fields") or {}
+        summary = str((fields.get("summary") or "")).strip()
+        issue_type = str(((fields.get("issuetype") or {}).get("name") or "")).strip()
+        parent_key = str(((fields.get("parent") or {}).get("key") or "")).strip()
         if not key:
             continue
-        out.append({"key": key, "summary": summary, "issue_type": issue_type})
+        out.append({"key": key, "summary": summary, "issue_type": issue_type, "parent_key": parent_key})
     return out
 
 
@@ -687,6 +689,12 @@ def _assign_issue_to_sprint(base, headers, sprint_value, issue_key):
     return f"Sprint assignment failed (sprint id {sprint_id}): {_format_jira_error(resp)}"
 
 
+def _update_software_issue(base, headers, issue_key, fields):
+    """PUT /rest/api/3/issue/{issue_key} for updating an existing issue."""
+    url = f"{base}/rest/api/3/issue/{issue_key}"
+    return requests.put(url, headers=headers, json={"fields": fields}, timeout=20)
+
+
 def push_issues_software(site_url, email, api_key, project_key, items):
     """
     Create Jira Software issues with parent/child hierarchy preserved.
@@ -714,9 +722,10 @@ def push_issues_software(site_url, email, api_key, project_key, items):
     5. After issue create, assign Sprint via the Agile API only when the
        issue carries a non-empty numeric sprint id and is sprintable.
        Empty sprint == Backlog == skip the call entirely.
-     6. If ``existing_issue_key`` is present, skip create, map
-         ``temp_to_key[temp_id] = existing_issue_key``, emit a success-style
-         result row, and continue BFS so descendants can attach to that key.
+        6. If ``existing_issue_key`` is present, update that existing Jira
+             issue with the card's fields, map ``temp_to_key[temp_id] =
+             existing_issue_key``, emit a success-style result row, and
+             continue BFS so descendants can attach to that key.
 
     Returns [{issue_key, issue_id, summary, url, warnings, temp_id}].
     Order matches the BFS push order (roots first, then breadth-first).
@@ -763,28 +772,6 @@ def push_issues_software(site_url, email, api_key, project_key, items):
         parent_tid = str(parent_tid).strip() if parent_tid else ""
 
         existing_issue_key = str((item or {}).get("existing_issue_key") or "").strip()
-        if existing_issue_key:
-            summary = str(item.get("summary") or item.get("card_title") or existing_issue_key).strip() or existing_issue_key
-            if parent_tid:
-                warnings.append(
-                    "Existing issue reuse does not modify the issue's parent in Jira; "
-                    "the selected issue is reused as-is."
-                )
-            if tid:
-                temp_to_key[tid] = existing_issue_key
-            results.append({
-                "issue_key": existing_issue_key,
-                "issue_id": "<existing>",
-                "summary": summary,
-                "url": f"{base}/browse/{existing_issue_key}",
-                "warnings": warnings,
-                "temp_id": tid,
-            })
-            if tid:
-                for child in children_of.get(tid, []):
-                    queue.append(child)
-            continue
-
         parent_key = ""
         if parent_tid:
             parent_key = temp_to_key.get(parent_tid, "")
@@ -792,6 +779,11 @@ def push_issues_software(site_url, email, api_key, project_key, items):
                 warnings.append(
                     f"Parent '{parent_tid}' was not created; this issue will be created as a root."
                 )
+
+        if existing_issue_key and tid:
+            # Children may still link to this existing issue even if update
+            # partially fails, so publish the mapping early.
+            temp_to_key[tid] = existing_issue_key
 
         requested_type = str((item or {}).get("issue_type") or "Task").strip() or "Task"
         if not parent_key and requested_type.strip().lower() in {"sub-task", "subtask"}:
@@ -815,6 +807,50 @@ def push_issues_software(site_url, email, api_key, project_key, items):
         fields, summary, issue_type_name = _build_software_fields(
             item, project_key, parent_key, resolved_type, warnings
         )
+
+        if existing_issue_key:
+            # Existing issue path: update selected Jira issue with the current
+            # card fields (editable rows update Jira in place).
+            resp = _update_software_issue(base, headers, existing_issue_key, fields)
+
+            if not resp.ok and resp.status_code == 400:
+                bad_keys = _unsupported_field_keys(resp, fields)
+                if bad_keys:
+                    stripped_fields = {k: v for k, v in fields.items() if k not in set(bad_keys)}
+                    warnings.append(
+                        "Removed unsupported Jira field(s) and retried update: "
+                        + ", ".join(sorted(set(bad_keys)))
+                    )
+                    resp2 = _update_software_issue(base, headers, existing_issue_key, stripped_fields)
+                    resp = resp2
+
+            if not resp.ok:
+                warnings.append(f"Failed to update issue {existing_issue_key}: {_format_jira_error(resp)}")
+
+            sprint_value = str((item or {}).get("sprint") or "").strip()
+            if sprint_value and existing_issue_key:
+                if issue_type_name.strip().lower() in _NON_SPRINTABLE_TYPES:
+                    warnings.append(
+                        f"Skipped sprint assignment: '{issue_type_name}' issues cannot be placed in a sprint."
+                    )
+                else:
+                    sprint_warning = _assign_issue_to_sprint(base, headers, sprint_value, existing_issue_key)
+                    if sprint_warning:
+                        warnings.append(sprint_warning)
+
+            results.append({
+                "issue_key": existing_issue_key,
+                "issue_id": "<existing>",
+                "summary": summary,
+                "url": f"{base}/browse/{existing_issue_key}",
+                "warnings": warnings,
+                "temp_id": tid,
+            })
+
+            if tid:
+                for child in children_of.get(tid, []):
+                    queue.append(child)
+            continue
 
         parent_type_name = ""
         if parent_tid and parent_tid in by_temp_id:

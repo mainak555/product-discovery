@@ -178,33 +178,136 @@
       return union ? (intersection / union) : 0;
     }
 
-    function _existingIssueOptionsFor(issue) {
+    function _normalizedSummary(v) {
+      return _normText(v || "");
+    }
+
+    function _issueMapByTempId() {
+      var out = {};
+      (state.issues || []).forEach(function (it) {
+        var tid = String((it && it.temp_id) || "").trim();
+        if (tid) out[tid] = it;
+      });
+      return out;
+    }
+
+    function _candidateExistingRows(issue, opts) {
+      opts = opts || {};
       var selectedType = String((issue && issue.issue_type) || "").trim().toLowerCase();
       var selectedSummary = String((issue && issue.summary) || "").trim();
-      var currentKey = String((issue && issue.existing_issue_key) || "").trim();
       var catalog = state.existingIssuesCatalog || [];
 
-      var matched = (catalog || [])
-        .filter(function (row) {
-          var rowType = String((row && row.issue_type) || "").trim().toLowerCase();
-          return !!row && !!String(row.key || "").trim() && (!selectedType || rowType === selectedType);
-        })
+      var parentKey = "";
+      var parentTempId = String((issue && issue.parent_temp_id) || "").trim();
+      if (parentTempId) {
+        var byTempId = _issueMapByTempId();
+        var parentIssue = byTempId[parentTempId] || null;
+        parentKey = String((parentIssue && parentIssue.existing_issue_key) || "").trim();
+      }
+
+      var sameType = (catalog || []).filter(function (row) {
+        var rowType = String((row && row.issue_type) || "").trim().toLowerCase();
+        return !!row && !!String(row.key || "").trim() && (!selectedType || rowType === selectedType);
+      });
+
+      if (parentKey) {
+        sameType = sameType.filter(function (row) {
+          var rowParent = String((row && row.parent_key) || "").trim();
+          return !!rowParent && rowParent === parentKey;
+        });
+      }
+
+      var scored = sameType
         .map(function (row) {
           var score = _fuzzySummaryScore(selectedSummary, row.summary || "");
+          var exact = !!selectedSummary && _normalizedSummary(selectedSummary) === _normalizedSummary(row.summary || "");
           return {
             key: String(row.key || "").trim(),
             summary: String(row.summary || "").trim(),
             score: score,
+            exact: exact,
           };
         })
-        .filter(function (row) {
-          // Keep strongly matched issues, and fall back to all same-type rows when summary is blank.
-          return !selectedSummary || row.score >= 0.35;
-        })
         .sort(function (a, b) {
+          if ((b.exact ? 1 : 0) !== (a.exact ? 1 : 0)) return (b.exact ? 1 : 0) - (a.exact ? 1 : 0);
           if (b.score !== a.score) return b.score - a.score;
           return a.key.localeCompare(b.key);
         });
+
+      var threshold = (typeof opts.threshold === "number") ? opts.threshold : 0.35;
+      var matched = scored.filter(function (row) {
+        return !selectedSummary || row.exact || row.score >= threshold;
+      });
+
+      if (!matched.length && sameType.length) {
+        matched = sameType
+          .map(function (row) {
+            return {
+              key: String(row.key || "").trim(),
+              summary: String(row.summary || "").trim(),
+              score: 0,
+              exact: false,
+            };
+          })
+          .sort(function (a, b) {
+            return a.key.localeCompare(b.key);
+          });
+      }
+
+      return matched;
+    }
+
+    function _autoSelectExistingBySummary(cascadeOnly) {
+      if (!isSoftware() || state.exported) return;
+
+      var changed = false;
+      var byTempId = _issueMapByTempId();
+      var childrenByParent = {};
+      (state.issues || []).forEach(function (it) {
+        var pid = String((it && it.parent_temp_id) || "").trim();
+        if (!pid) return;
+        (childrenByParent[pid] = childrenByParent[pid] || []).push(it);
+      });
+
+      var queue = [];
+      (state.issues || []).forEach(function (it) {
+        var pid = String((it && it.parent_temp_id) || "").trim();
+        if (!pid || !byTempId[pid]) queue.push(it);
+      });
+
+      while (queue.length) {
+        var issue = queue.shift();
+        var current = String((issue && issue.existing_issue_key) || "").trim();
+        var candidates = _candidateExistingRows(issue, { threshold: 0.35 });
+        var allowedKeys = {};
+        candidates.forEach(function (row) { allowedKeys[row.key] = true; });
+
+        if (current && !allowedKeys[current]) {
+          issue.existing_issue_key = "";
+          current = "";
+          changed = true;
+        }
+
+        if (!cascadeOnly && !current) {
+          var exact = candidates.filter(function (row) { return row.exact; });
+          if (exact.length === 1) {
+            issue.existing_issue_key = exact[0].key;
+            changed = true;
+          }
+        }
+
+        var tid = String((issue && issue.temp_id) || "").trim();
+        (childrenByParent[tid] || []).forEach(function (child) { queue.push(child); });
+      }
+
+      if (changed) {
+        renderIssues(false);
+      }
+    }
+
+    function _existingIssueOptionsFor(issue) {
+      var currentKey = String((issue && issue.existing_issue_key) || "").trim();
+      var matched = _candidateExistingRows(issue, { threshold: 0.35 });
 
       var options = [{ value: "", label: "New" }];
       matched.forEach(function (row) {
@@ -231,6 +334,7 @@
         renderGlobalDropdownOptions();
         setGlobalDropdowns();
         applyGlobalSelectionsToIssues();
+        _autoSelectExistingBySummary(false);
         syncFooter();
         return;
       }
@@ -256,6 +360,7 @@
       renderGlobalDropdownOptions();
       setGlobalDropdowns();
       applyGlobalSelectionsToIssues();
+      _autoSelectExistingBySummary(false);
       syncFooter();
     }
 
@@ -659,7 +764,25 @@
         });
 
         editorEl.addEventListener("input", syncFooter);
-        editorEl.addEventListener("change", syncFooter);
+        editorEl.addEventListener("change", function (e) {
+          syncFooter();
+
+          if (!isSoftware() || state.exported) return;
+
+          var target = e && e.target;
+          if (!target || !target.getAttribute) return;
+
+          var field = target.getAttribute("data-field") || "";
+          if (field !== "issue_type" && field !== "summary" && field !== "existing_issue_key") return;
+
+          // Re-render so Existing Issue options recompute from current
+          // summary + issue type, and read-only state updates immediately
+          // after selecting an existing Jira key.
+          state.issues = window.JiraUtils.collectIssuesFromEditor(cfg.prefix + "-editor-issues", cfg.type);
+          _autoSelectExistingBySummary(field === "existing_issue_key");
+          renderIssues(false);
+          syncFooter();
+        });
       }
     }
 

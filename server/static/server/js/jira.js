@@ -277,7 +277,7 @@
     });
 
     function renderField(field) {
-      var fieldReadOnly = !!isExported || (reused && field !== "existing_issue_key");
+      var fieldReadOnly = !!isExported;
       return _renderIssueField(node, field, fieldOptions, fieldReadOnly);
     }
 
