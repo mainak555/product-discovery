@@ -7,6 +7,7 @@ attach request/response details to the active OpenTelemetry span.
 from __future__ import annotations
 
 import os
+from contextlib import nullcontext
 
 from typing import Any, Callable, Mapping
 
@@ -140,30 +141,59 @@ def instrument_http_response(
     is_ok = bool(getattr(resp, "ok", False))
     include_payload_bodies = (not is_ok) or _http_success_body_logging_enabled()
 
-    span = enrich_http_span(
-        resp,
-        provider=provider,
-        action=action,
-        redact_url=redact_url,
-        extra_attributes=extra_attributes,
-        include_payload_bodies=include_payload_bodies,
-    )
+    parent_span = get_current_recording_span()
+    span_context = nullcontext(None)
+    span_from_context = None
 
-    if is_ok:
-        return span, None
+    # Emit a dedicated integration span only when a parent recording span
+    # exists, so this span is always a child and never an independent root.
+    try:
+        from opentelemetry import trace
 
-    response_text = getattr(resp, "text", "") or ""
-    error_detail = detail or (response_text[:200] if response_text else getattr(resp, "reason", "HTTP error"))
+        if parent_span is not None:
+            tracer = trace.get_tracer("product-discovery.http")
+            parent_ctx = trace.set_span_in_context(parent_span)
+            span_context = tracer.start_as_current_span(
+                f"integration.http.{provider}.{action}",
+                context=parent_ctx,
+            )
+    except Exception:
+        span_context = nullcontext(None)
 
-    mark_http_span_error(
-        span,
-        provider=provider,
-        action=action,
-        status_code=int(getattr(resp, "status_code", 0) or 0),
-        detail=str(error_detail),
-        response_body=response_text,
-        error_messages=error_messages,
-        field_errors=field_errors,
-        extra_payloads=extra_error_payloads,
-    )
-    return span, str(error_detail)
+    with span_context as started_span:
+        if started_span is not None:
+            span_from_context = started_span
+            try:
+                span_from_context.set_attribute("integration.http.span_source", "manual")
+            except Exception:
+                pass
+
+        span = enrich_http_span(
+            resp,
+            provider=provider,
+            action=action,
+            redact_url=redact_url,
+            extra_attributes=extra_attributes,
+            include_payload_bodies=include_payload_bodies,
+        )
+        if span is None:
+            span = span_from_context
+
+        if is_ok:
+            return span, None
+
+        response_text = getattr(resp, "text", "") or ""
+        error_detail = detail or (response_text[:200] if response_text else getattr(resp, "reason", "HTTP error"))
+
+        mark_http_span_error(
+            span,
+            provider=provider,
+            action=action,
+            status_code=int(getattr(resp, "status_code", 0) or 0),
+            detail=str(error_detail),
+            response_body=response_text,
+            error_messages=error_messages,
+            field_errors=field_errors,
+            extra_payloads=extra_error_payloads,
+        )
+        return span, str(error_detail)
