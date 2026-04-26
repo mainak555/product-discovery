@@ -310,6 +310,21 @@ select.input {
   margin-bottom: $space-lg;
 }
 
+.form-hint--compact {
+  display: block;
+  margin-bottom: $space-sm;
+}
+
+.form-row--two-col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 768px) {
+  .form-row--two-col {
+    grid-template-columns: 1fr;
+  }
+}
+
 .form-hint--info {
   color: $color-info;
   font-size: $font-size-sm;

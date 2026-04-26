@@ -36,6 +36,17 @@
 
   <div class="form-row">
     <div class="form-group">
+      <label>MCP Tools</label>
+      <select name="agents[{{ idx }}][mcp_tools]"
+              class="input input--sm js-mcp-tools-select"
+              data-agent-index="{{ idx }}">
+        <option value="none"      {% if not agent or agent.mcp_tools == 'none' or not agent.mcp_tools %}selected{% endif %}>None</option>
+        <option value="shared"    {% if agent and agent.mcp_tools == 'shared' %}selected{% endif %}>Shared</option>
+        <option value="dedicated" {% if agent and agent.mcp_tools == 'dedicated' %}selected{% endif %}>Dedicated</option>
+      </select>
+    </div>
+
+    <div class="form-group">
       <label>Temperature</label>
       <input type="number"
              name="agents[{{ idx }}][temperature]"
@@ -47,19 +58,9 @@
              placeholder="0.7"
              required>
     </div>
-
-    <div class="form-group">
-      <label>MCP Tools</label>
-      <select name="agents[{{ idx }}][mcp_tools]"
-              class="input input--sm js-mcp-tools-select"
-              data-agent-index="{{ idx }}">
-        <option value="none"      {% if not agent or agent.mcp_tools == 'none' or not agent.mcp_tools %}selected{% endif %}>None</option>
-        <option value="shared"    {% if agent and agent.mcp_tools == 'shared' %}selected{% endif %}>Shared</option>
-        <option value="dedicated" {% if agent and agent.mcp_tools == 'dedicated' %}selected{% endif %}>Dedicated</option>
-      </select>
-      <small class="form-hint">Choose how this agent gets MCP tools: <strong>None</strong> (no tools), <strong>Shared</strong> (project-wide pool), or <strong>Dedicated</strong> (agent-only JSON below).</small>
-    </div>
   </div>
+
+  <small class="form-hint form-hint--compact"><i>Choose how this agent gets MCP tools: <strong>None</strong> (no tools), <strong>Shared</strong> (project-wide pool), or <strong>Dedicated</strong> (agent-only JSON below).</i></small>
 
   <div class="form-group">
     <label>System Prompt</label>
