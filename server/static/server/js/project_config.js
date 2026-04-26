@@ -115,6 +115,54 @@ document.addEventListener("DOMContentLoaded", function () {
     fields.hidden = !enabled;
   }
 
+  function syncMcpDedicatedVisibility() {
+    document.querySelectorAll(".js-mcp-tools-select").forEach(function (sel) {
+      var idx = sel.getAttribute("data-agent-index");
+      var card = sel.closest(".agent-card");
+      if (!card) return;
+      var wrap = card.querySelector(".js-mcp-dedicated-wrap[data-agent-index='" + idx + "']") ||
+                 card.querySelector(".js-mcp-dedicated-wrap");
+      if (!wrap) return;
+      var isDedicated = sel.value === "dedicated";
+      wrap.hidden = !isDedicated;
+      wrap.querySelectorAll("textarea").forEach(function (ta) {
+        ta.disabled = !isDedicated;
+      });
+    });
+  }
+
+  function tryParseJson(value, label) {
+    var text = (value || "").trim();
+    if (!text) return { ok: true, empty: true };
+    try {
+      JSON.parse(text);
+      return { ok: true, empty: false };
+    } catch (err) {
+      return { ok: false, error: label + ": " + err.message };
+    }
+  }
+
+  function validateMcpJsonOnSubmit(form) {
+    var errors = [];
+    form.querySelectorAll(".js-mcp-tools-select").forEach(function (sel) {
+      if (sel.value !== "dedicated") return;
+      var card = sel.closest(".agent-card");
+      var nameInput = card ? card.querySelector("[name$='[name]']") : null;
+      var agentLabel = nameInput && nameInput.value ? nameInput.value : ("agent #" + (sel.getAttribute("data-agent-index") || "?"));
+      var ta = card ? card.querySelector(".js-mcp-dedicated-json") : null;
+      if (!ta) return;
+      var result = tryParseJson(ta.value, "Dedicated MCP for " + agentLabel);
+      if (!result.ok) errors.push(result.error);
+      else if (result.empty) errors.push("Dedicated MCP for " + agentLabel + ": JSON configuration is required.");
+    });
+    var sharedTa = form.querySelector(".js-shared-mcp-json");
+    if (sharedTa) {
+      var sharedResult = tryParseJson(sharedTa.value, "Shared MCP Tools");
+      if (!sharedResult.ok) errors.push(sharedResult.error);
+    }
+    return errors;
+  }
+
   function listAgentNames() {
     var container = document.getElementById("agents-container");
     if (!container) return [];
@@ -162,6 +210,7 @@ document.addEventListener("DOMContentLoaded", function () {
     syncTeamTypeFields();
     syncIntegrationsFields();
     syncExportAgentCheckboxes();
+    syncMcpDedicatedVisibility();
     updateSubmitState();
     syncProviderConfigState("trello");
   }
@@ -179,6 +228,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
       card.querySelectorAll("[name]").forEach(function (el) {
         el.name = el.name.replace(/agents\[\d+\]/, "agents[" + idx + "]");
+      });
+
+      card.querySelectorAll("[data-agent-index]").forEach(function (el) {
+        el.setAttribute("data-agent-index", idx);
       });
     });
   }
@@ -269,6 +322,19 @@ document.addEventListener("DOMContentLoaded", function () {
         e.target.id === "integrations-trello-enabled") {
       syncIntegrationsFields();
       syncProviderConfigState("trello");
+    }
+    if (e.target.classList && e.target.classList.contains("js-mcp-tools-select")) {
+      syncMcpDedicatedVisibility();
+    }
+  });
+
+  document.body.addEventListener("htmx:beforeRequest", function (e) {
+    var elt = e.detail && e.detail.elt;
+    if (!elt || !elt.matches || !elt.matches("form.config-form")) return;
+    var errors = validateMcpJsonOnSubmit(elt);
+    if (errors.length) {
+      e.preventDefault();
+      alert("MCP configuration is invalid:\n\n• " + errors.join("\n• "));
     }
   });
 

@@ -1,10 +1,125 @@
 """Input validation for project configuration data."""
 
+import json
+
 from .model_catalog import get_agent_model_names
 
 TEAM_TYPES = ("round_robin", "selector")
 HUMAN_GATE_INTERACTION_MODES = ("approve_reject", "feedback")
 JIRA_TYPES = ("software", "service_desk", "business")
+MCP_TOOL_SCOPES = ("none", "shared", "dedicated")
+MCP_HTTP_TRANSPORT = "http"
+MCP_DEPRECATED_TRANSPORTS = ("sse",)
+
+
+def _coerce_mcp_dict(raw, label):
+    """Accept dict OR JSON string; return a dict. Empty/whitespace string → {}."""
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{label}: must be valid JSON ({exc.msg} at line {exc.lineno}).")
+        if not isinstance(parsed, dict):
+            raise ValueError(f"{label}: top-level value must be a JSON object.")
+        return parsed
+    raise ValueError(f"{label}: must be a JSON object or JSON string.")
+
+
+def _validate_mcp_server_entry(name, entry, label):
+    """Validate a single mcpServers[<name>] entry. Supports stdio + streamable HTTP."""
+    if not isinstance(entry, dict):
+        raise ValueError(f"{label}.mcpServers['{name}']: must be a JSON object.")
+
+    transport = (entry.get("transport") or "").strip().lower()
+    if transport in MCP_DEPRECATED_TRANSPORTS:
+        raise ValueError(
+            f"{label}.mcpServers['{name}']: transport '{transport}' is deprecated by MCP. "
+            "Use stdio (default) or streamable HTTP (transport: 'http')."
+        )
+
+    # Streamable HTTP shape
+    if transport == MCP_HTTP_TRANSPORT or "url" in entry:
+        url = (entry.get("url") or "").strip()
+        if not url:
+            raise ValueError(
+                f"{label}.mcpServers['{name}']: HTTP transport requires a non-empty 'url'."
+            )
+        if not (url.startswith("http://") or url.startswith("https://")):
+            raise ValueError(
+                f"{label}.mcpServers['{name}']: 'url' must start with http:// or https://."
+            )
+        headers = entry.get("headers") or {}
+        if not isinstance(headers, dict):
+            raise ValueError(f"{label}.mcpServers['{name}']: 'headers' must be an object.")
+        for hk, hv in headers.items():
+            if not isinstance(hk, str) or not isinstance(hv, str):
+                raise ValueError(
+                    f"{label}.mcpServers['{name}']: header keys/values must be strings."
+                )
+        cleaned = {"transport": MCP_HTTP_TRANSPORT, "url": url}
+        if headers:
+            cleaned["headers"] = headers
+        return cleaned
+
+    # Stdio shape (default)
+    command = (entry.get("command") or "").strip()
+    if not command:
+        raise ValueError(
+            f"{label}.mcpServers['{name}']: stdio transport requires a non-empty 'command'."
+        )
+    args = entry.get("args") or []
+    if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
+        raise ValueError(f"{label}.mcpServers['{name}']: 'args' must be a list of strings.")
+    env = entry.get("env") or {}
+    if not isinstance(env, dict):
+        raise ValueError(f"{label}.mcpServers['{name}']: 'env' must be an object.")
+    for ek, ev in env.items():
+        if not isinstance(ek, str) or not isinstance(ev, str):
+            raise ValueError(
+                f"{label}.mcpServers['{name}']: env keys/values must be strings."
+            )
+    return {"command": command, "args": list(args), "env": dict(env)}
+
+
+def validate_mcp_configuration(raw, label="mcp_configuration"):
+    """
+    Validate an MCP configuration object.
+
+    Accepts:
+      - dict matching {"mcpServers": {<name>: <entry>, ...}}
+      - JSON string of the above
+
+    Returns the cleaned dict {"mcpServers": {...}}. Raises ValueError on any issue.
+    Empty/missing input returns {}.
+    """
+    parsed = _coerce_mcp_dict(raw, label)
+    if not parsed:
+        return {}
+
+    servers = parsed.get("mcpServers")
+    if servers is None:
+        raise ValueError(
+            f"{label}: top-level key 'mcpServers' is required (object of name → server config)."
+        )
+    if not isinstance(servers, dict):
+        raise ValueError(f"{label}: 'mcpServers' must be a JSON object.")
+    if not servers:
+        raise ValueError(f"{label}: 'mcpServers' must declare at least one server.")
+
+    cleaned_servers = {}
+    for name, entry in servers.items():
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(f"{label}: mcpServers entry names must be non-empty strings.")
+        cleaned_servers[name.strip()] = _validate_mcp_server_entry(name.strip(), entry, label)
+
+    return {"mcpServers": cleaned_servers}
 
 
 def validate_agent(data):
@@ -53,12 +168,43 @@ def validate_agent(data):
             f"Agent '{name}': 'temperature' must be a number between 0 and 2."
         )
 
+    mcp_tools, mcp_configuration = _validate_agent_mcp(data, name)
+
     return {
         "name": name,
         "model": model,
         "system_prompt": system_prompt,
         "temperature": temperature,
+        "mcp_tools": mcp_tools,
+        "mcp_configuration": mcp_configuration,
     }
+
+
+def _validate_agent_mcp(data, name):
+    """Extract and validate per-agent MCP scope + dedicated configuration."""
+    raw_scope = (data.get("mcp_tools") or "none")
+    if isinstance(raw_scope, str):
+        scope = raw_scope.strip().lower() or "none"
+    else:
+        scope = "none"
+    if scope not in MCP_TOOL_SCOPES:
+        raise ValueError(
+            f"Agent '{name}': 'mcp_tools' must be one of {', '.join(MCP_TOOL_SCOPES)}."
+        )
+
+    raw_cfg = data.get("mcp_configuration")
+    if scope == "dedicated":
+        cleaned = validate_mcp_configuration(
+            raw_cfg, label=f"Agent '{name}'.mcp_configuration"
+        )
+        if not cleaned:
+            raise ValueError(
+                f"Agent '{name}': 'mcp_configuration' is required when mcp_tools = 'dedicated'."
+            )
+        return scope, cleaned
+
+    # none / shared → ignore any submitted config
+    return scope, {}
 
 
 def validate_human_gate(data):
@@ -389,6 +535,15 @@ def validate_project(data):
         [a["name"] for a in agents],
     )
 
+    shared_mcp_tools = validate_mcp_configuration(
+        data.get("shared_mcp_tools"), label="shared_mcp_tools"
+    )
+    if any(a.get("mcp_tools") == "shared" for a in agents) and not shared_mcp_tools:
+        raise ValueError(
+            "'shared_mcp_tools' must define at least one server in 'mcpServers' "
+            "when one or more assistant agents use mcp_tools = 'shared'."
+        )
+
     return {
         "project_name": project_name,
         "objective": objective,
@@ -396,4 +551,5 @@ def validate_project(data):
         "human_gate": human_gate,
         "team": team,
         "integrations": integrations,
+        "shared_mcp_tools": shared_mcp_tools,
     }

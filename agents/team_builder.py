@@ -5,12 +5,13 @@ from __future__ import annotations
 import logging
 
 from .factory import build_model_client
+from .mcp_tools import build_mcp_workbenches, resolve_mcp_servers_for_agent
 from .prompt_builder import resolve_system_prompt
 
 logger = logging.getLogger(__name__)
 
 
-def build_agent_runtime_spec(agent_config: dict, objective: str = "") -> dict:
+def build_agent_runtime_spec(agent_config: dict, project: dict | None = None, objective: str = "") -> dict:
     """Return a lightweight runtime spec for a configured assistant agent."""
     system_message = resolve_system_prompt(
         agent_config.get("system_prompt", ""), objective=objective
@@ -18,6 +19,14 @@ def build_agent_runtime_spec(agent_config: dict, objective: str = "") -> dict:
     # Extract description from line 1 of the resolved system message so that
     # SelectorGroupChat's {roles} placeholder renders a meaningful summary.
     description = system_message.splitlines()[0].strip() if system_message else ""
+
+    # Resolve MCP tools for this agent (none/shared/dedicated)
+    scope = (agent_config.get("mcp_tools") or "none").strip().lower()
+    workbenches: list = []
+    if scope in ("shared", "dedicated") and project is not None:
+        servers = resolve_mcp_servers_for_agent(agent_config, project)
+        workbenches = build_mcp_workbenches(servers, scope=scope)
+
     return {
         "name": agent_config["name"],
         "model_client": build_model_client(
@@ -26,6 +35,7 @@ def build_agent_runtime_spec(agent_config: dict, objective: str = "") -> dict:
         ),
         "system_message": system_message,
         "description": description,
+        "workbenches": workbenches,
     }
 
 
@@ -52,8 +62,10 @@ def build_team(project: dict):
     team_type = (team_cfg.get("type") or "round_robin").strip()
 
     agents = []
+    all_workbenches: list = []
+    mcp_agent_count = 0
     for agent_cfg in project["agents"]:
-        spec = build_agent_runtime_spec(agent_cfg, objective=objective)
+        spec = build_agent_runtime_spec(agent_cfg, project=project, objective=objective)
         # Ensure name is a valid Python identifier (safety net for legacy docs)
         safe_name = re.sub(r"[\s\-]+", "_", spec["name"])
         safe_name = re.sub(r"[^\w]", "", safe_name)
@@ -61,14 +73,21 @@ def build_team(project: dict):
             safe_name = "_" + safe_name
         if not safe_name:
             safe_name = f"agent_{len(agents)}"
-        agents.append(
-            AssistantAgent(
-                name=safe_name,
-                model_client=spec["model_client"],
-                system_message=spec["system_message"],
-                description=spec["description"],
-            )
-        )
+        agent_kwargs = {
+            "name": safe_name,
+            "model_client": spec["model_client"],
+            "system_message": spec["system_message"],
+            "description": spec["description"],
+        }
+        wbs = spec.get("workbenches") or []
+        if wbs:
+            agent_kwargs["workbench"] = wbs if len(wbs) > 1 else wbs[0]
+            all_workbenches.extend(wbs)
+            mcp_agent_count += 1
+        agents.append(AssistantAgent(**agent_kwargs))
+
+    # Stash workbenches on the team so runtime can register them after build.
+    project.setdefault("_runtime", {})["mcp_workbenches"] = all_workbenches
 
     has_gate = project.get("human_gate", {}).get("enabled", False)
     n_agents = len(agents)
@@ -104,6 +123,7 @@ def build_team(project: dict):
                 "max_iterations": max_iter,
                 "human_gate": has_gate,
                 "selector_model": selector_model_name,
+                "mcp_agent_count": mcp_agent_count,
             },
         )
         return SelectorGroupChat(
@@ -124,6 +144,7 @@ def build_team(project: dict):
             "agent_count": n_agents,
             "max_iterations": max_iter,
             "human_gate": has_gate,
+            "mcp_agent_count": mcp_agent_count,
         },
     )
     return RoundRobinGroupChat(agents, termination_condition=termination)

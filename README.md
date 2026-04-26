@@ -36,15 +36,54 @@ Open **http://127.0.0.1:8000** in your browser.
 
 ## Docker
 
-```bash
-# Build
-docker build -t product-discovery .
+The repository ships three deployment topologies under `deployments/`:
 
-# Run (uses .env file for configuration)
+| Topology | Use when | MCP location |
+| --- | --- | --- |
+| [`deployments/standalone/`](deployments/standalone/README.md) | Single-container hosts (Vercel, HF Spaces, fly.io, local dev) | Node bundled in the app image; stdio MCP servers in-process |
+| [`deployments/compose/`](deployments/compose/README.md) | Docker Compose / single VM | Python-only `app` + Node-based `mcp-gateway` sidecar |
+| [`deployments/k8s/`](deployments/k8s/README.md) | Kubernetes (Helm) | Same sidecar split, full Helm chart |
+
+Quick local build/run (standalone topology — Python + Node bundled):
+
+```bash
+docker build -f deployments/standalone/Dockerfile -t product-discovery .
 docker run -p 8000:8000 --env-file .env product-discovery
 ```
 
-The container runs `uvicorn` (ASGI) by default, which is required for SSE streaming.
+The container runs `uvicorn` (ASGI) by default, which is required for SSE
+streaming of agent output.
+
+---
+
+## MCP (Model Context Protocol) Tools
+
+Assistant agents can be augmented with MCP tools, configured per-project and
+per-agent. Each agent's `mcp_tools` field is one of:
+
+- `none` — no tools attached.
+- `shared` — uses the project-level `shared_mcp_tools` JSON.
+- `dedicated` — uses a per-agent `mcp_configuration` JSON.
+
+Both JSON fields share the same shape:
+
+```jsonc
+{
+  "mcpServers": {
+    "fs":    { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/data"] },
+    "fetch": { "transport": "http", "url": "http://mcp-gateway:9000/fetch/mcp" }
+  }
+}
+```
+
+Supported transports: **stdio** (`{command, args, env}`) and **streamable HTTP**
+(`{transport: "http", url, headers}`). SSE is intentionally unsupported.
+
+For the standalone deployment, the app image bundles Node so stdio MCP
+servers can run in-process. For compose / k8s, a separate `mcp-gateway`
+container hosts MCP servers and exposes them over streamable HTTP.
+
+Full documentation: [docs/mcp_integration.md](docs/mcp_integration.md).
 
 ---
 

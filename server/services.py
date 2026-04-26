@@ -80,6 +80,24 @@ def _mask_secret(value):
     return SECRET_MASK if value else ""
 
 
+_VALID_MCP_SCOPES = ("none", "shared", "dedicated")
+
+
+def _normalize_mcp_scope(value):
+    """Return one of 'none' | 'shared' | 'dedicated'. Defaults to 'none'."""
+    if not isinstance(value, str):
+        return "none"
+    scope = value.strip().lower()
+    return scope if scope in _VALID_MCP_SCOPES else "none"
+
+
+def _normalize_mcp_dict(value):
+    """Return a dict for stored MCP configuration; non-dicts and falsy values become {}."""
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
 def _normalize_export_agents(raw_trello, raw_integrations):
     """Return a list of export agent names, migrating legacy single-string field."""
     raw_ea = raw_trello.get("export_agents")
@@ -142,6 +160,8 @@ def normalize_project(project):
             "temperature": _coerce_temperature(
                 raw_agent.get("temperature", llm_config.get("temperature", 0.7))
             ),
+            "mcp_tools": _normalize_mcp_scope(raw_agent.get("mcp_tools")),
+            "mcp_configuration": _normalize_mcp_dict(raw_agent.get("mcp_configuration")),
         })
 
     if not assistants:
@@ -150,6 +170,8 @@ def normalize_project(project):
             "model": default_model,
             "system_prompt": default_prompt,
             "temperature": 0.7,
+            "mcp_tools": "none",
+            "mcp_configuration": {},
         }]
 
     human_gate = {
@@ -245,6 +267,7 @@ def normalize_project(project):
         "human_gate": human_gate,
         "team": team,
         "integrations": integrations,
+        "shared_mcp_tools": _normalize_mcp_dict(project.get("shared_mcp_tools")),
         "has_chat_sessions": False,
     }
 

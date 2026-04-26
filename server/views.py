@@ -68,7 +68,8 @@ def _parse_form_agents(post_data):
     Extract agent list from the flat POST form data.
 
     Form fields use bracket notation:
-      agents[0][name], agents[0][model], agents[0][system_prompt], ...
+      agents[0][name], agents[0][model], agents[0][system_prompt],
+      agents[0][temperature], agents[0][mcp_tools], agents[0][mcp_configuration], ...
     """
     agents = []
     idx = 0
@@ -79,6 +80,8 @@ def _parse_form_agents(post_data):
             "model": post_data.get(f"{prefix}[model]", "").strip(),
             "system_prompt": post_data.get(f"{prefix}[system_prompt]", "").strip(),
             "temperature": post_data.get(f"{prefix}[temperature]", "0.7").strip() or "0.7",
+            "mcp_tools": (post_data.get(f"{prefix}[mcp_tools]", "none") or "none").strip().lower(),
+            "mcp_configuration": post_data.get(f"{prefix}[mcp_configuration]", ""),
         })
         idx += 1
 
@@ -166,6 +169,7 @@ def _build_project_data(post_data, existing_project=None):
             "allow_repeated_speaker": post_data.get("team[allow_repeated_speaker]"),
         },
         "integrations": integrations,
+        "shared_mcp_tools": post_data.get("shared_mcp_tools", ""),
     }
 
 

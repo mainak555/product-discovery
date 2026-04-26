@@ -237,6 +237,11 @@ a:hover { text-decoration: underline; }
 .input--sm { padding: $space-xs $space-sm; font-size: $font-size-sm; }
 
 .input--textarea { resize: vertical; }
+.input--mono {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: $font-size-sm;
+  line-height: 1.45;
+}
 
 select.input {
   appearance: auto;

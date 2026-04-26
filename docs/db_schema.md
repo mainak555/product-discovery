@@ -30,13 +30,18 @@ Cross-references: [docs/API.md](API.md) (form fields + HTTP schema), [AGENTS.md]
   // ── Assistant agents ──────────────────────────────────────────────────────
   "agents": [
     {
-      "name":          "string — must be a valid Python identifier",
-      "model":         "string — must match an entry in agent_models.json",
-      "system_prompt": "string — non-empty; project objective is appended at runtime",
-      "temperature":   0.7   // float, 0.0–2.0
+      "name":              "string — must be a valid Python identifier",
+      "model":             "string — must match an entry in agent_models.json",
+      "system_prompt":     "string — non-empty; project objective is appended at runtime",
+      "temperature":       0.7,   // float, 0.0–2.0
+      "mcp_tools":         "none",  // "none" | "shared" | "dedicated"
+      "mcp_configuration": {}        // {} unless mcp_tools == "dedicated"; see docs/mcp_integration.md
     }
     // ...one entry per assistant agent
   ],
+
+  // ── Project-level MCP shared config ───────────────────────────────────────
+  "shared_mcp_tools": {},  // {} or {"mcpServers": {...}} — required non-empty when any agent uses mcp_tools = "shared"
 
   // ── Human gate (optional) ─────────────────────────────────────────────────
   "human_gate": {

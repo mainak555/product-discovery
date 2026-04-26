@@ -1,4 +1,5 @@
 <!-- Read-only configuration view (HTMX partial) -->
+{% load md_extras %}
 
 {% if message %}
   <div class="alert alert-info">{{ message }}</div>
@@ -25,9 +26,21 @@
           <strong>Temperature:</strong> {{ agent.temperature }}
         </div>
         <div class="agent-card__detail">
+          <strong>MCP Tools:</strong>
+          {% if agent.mcp_tools == 'dedicated' %}Dedicated{% elif agent.mcp_tools == 'shared' %}Shared{% else %}None{% endif %}
+        </div>
+        <div class="agent-card__detail">
           <strong>System Prompt:</strong>
           <div class="agent-card__prompt agent-card__prompt--markdown markdown-prose" data-markdown>{{ agent.system_prompt }}</div>
         </div>
+        {% if agent.mcp_tools == 'dedicated' and agent.mcp_configuration %}
+        <div class="agent-card__detail">
+          <strong>Dedicated MCP Configuration:</strong>
+          <div class="agent-card__prompt agent-card__prompt--markdown markdown-prose" data-markdown>```json
+{{ agent.mcp_configuration|to_json }}
+```</div>
+        </div>
+        {% endif %}
       </div>
     {% endfor %}
   </div>
@@ -66,6 +79,19 @@
       </div>
     {% endif %}
   </div>
+
+  {% if project.shared_mcp_tools %}
+  <div class="config-readonly__section">
+    <h3>Shared MCP Tools</h3>
+    <div class="agent-card agent-card--readonly">
+      <div class="agent-card__detail">
+        <div class="agent-card__prompt agent-card__prompt--markdown markdown-prose" data-markdown>```json
+{{ project.shared_mcp_tools|to_json }}
+```</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   {% if project.integrations.enabled %}
   <div class="config-readonly__section">

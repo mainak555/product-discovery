@@ -272,7 +272,7 @@ value before export.
 | MongoDB | `mongo.connect`, `mongo.connect_failed` |
 | Services | `project.created`, `project.updated`, `project.deleted`, `chat.session.started`, `chat.session.ended` |
 | HTTP errors | `trello.api.error`, `jira.api.error` (success no longer logged — lives on spans) |
-| Agent runtime | `agents.model_client.created`, `agents.team.built`, `agents.team.cancelled`, `agents.extraction.completed`, `agents.extraction.parse_failed` |
+| Agent runtime | `agents.model_client.created`, `agents.team.built`, `agents.team.cancelled`, `agents.extraction.completed`, `agents.extraction.parse_failed`, `agents.mcp.created`, `agents.mcp.closed`, `agents.mcp.failed` |
 
 Levels:
 - `INFO` — successful lifecycle events with structured `extra={...}`.

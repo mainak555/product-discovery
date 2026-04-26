@@ -1,5 +1,6 @@
 <!-- Configuration form (create / edit) — HTMX partial -->
 {% load static %}
+{% load md_extras %}
 
 {% if success %}
   <div class="alert alert-success" id="toast">{{ success }}</div>
@@ -187,6 +188,24 @@
       </div>
     </div>
 
+  </fieldset>
+
+  <!-- ====== SHARED MCP TOOLS ====== -->
+  <fieldset class="form-group section-fieldset">
+    <legend>Shared MCP Tools</legend>
+    <p class="form-hint form-hint--block">
+      Project-wide MCP server pool. Used by every assistant agent whose <strong>MCP Tools</strong> field is set to <strong>Shared</strong>.
+      Leave empty to disable. JSON is validated on save.
+    </p>
+    <div class="form-group">
+      <label for="shared_mcp_tools">Shared MCP Configuration (JSON)</label>
+      <textarea id="shared_mcp_tools"
+                name="shared_mcp_tools"
+                class="input input--textarea input--mono js-shared-mcp-json"
+                rows="10"
+                placeholder='{"mcpServers": {"filesystem": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/data"], "env": {}}}}'>{% if project.shared_mcp_tools %}{{ project.shared_mcp_tools|to_json }}{% endif %}</textarea>
+      <small class="form-hint">JSON object with <code>mcpServers</code> map. Each server uses stdio (<code>command</code>/<code>args</code>/<code>env</code>) or streamable HTTP (<code>transport: "http"</code> + <code>url</code>/<code>headers</code>). Required when any agent uses Shared scope.</small>
+    </div>
   </fieldset>
 
   <!-- ====== INTEGRATIONS ====== -->

@@ -44,8 +44,13 @@ def get_or_build_team(
     cache_miss = session_id not in _TEAM_CACHE
     if cache_miss:
         logger.info("agents.team.cache_miss", extra={"session_id": session_id})
-        _TEAM_CACHE[session_id] = build_team(project)
+        team = build_team(project)
+        _TEAM_CACHE[session_id] = team
         _CANCEL_TOKENS[session_id] = CT()
+        # Track MCP workbenches for deterministic teardown on evict_team()
+        from .mcp_tools import register_session_workbenches
+        wbs = (project.get("_runtime") or {}).get("mcp_workbenches") or []
+        register_session_workbenches(session_id, wbs)
     else:
         logger.debug("agents.team.cache_hit", extra={"session_id": session_id})
 
@@ -85,3 +90,9 @@ def evict_team(session_id: str) -> None:
         logger.info("agents.team.evicted", extra={"session_id": session_id})
     _TEAM_CACHE.pop(session_id, None)
     _CANCEL_TOKENS.pop(session_id, None)
+    # Tear down any MCP workbenches that were attached to this session.
+    try:
+        from .mcp_tools import close_session_workbenches
+        close_session_workbenches(session_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("agents.mcp.failed", extra={"session_id": session_id, "phase": "evict"})
