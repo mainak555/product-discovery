@@ -98,6 +98,13 @@ def _normalize_mcp_dict(value):
     return {}
 
 
+def _mask_mcp_secrets(raw):
+    """Return {KEY: SECRET_MASK} for every stored MCP secret key. Non-dict → {}."""
+    if not isinstance(raw, dict):
+        return {}
+    return {k: SECRET_MASK for k in raw.keys() if isinstance(k, str) and k}
+
+
 def _normalize_export_agents(raw_trello, raw_integrations):
     """Return a list of export agent names, migrating legacy single-string field."""
     raw_ea = raw_trello.get("export_agents")
@@ -268,6 +275,7 @@ def normalize_project(project):
         "team": team,
         "integrations": integrations,
         "shared_mcp_tools": _normalize_mcp_dict(project.get("shared_mcp_tools")),
+        "mcp_secrets": _mask_mcp_secrets(project.get("mcp_secrets")),
         "has_chat_sessions": False,
     }
 
@@ -418,34 +426,46 @@ def update_project(project_id, data):
 def _restore_masked_secrets(data, existing):
     """Replace SECRET_MASK placeholders in data with actual values from the DB."""
     integrations = data.get("integrations")
-    if not isinstance(integrations, dict):
-        return
+    if isinstance(integrations, dict):
+        existing_integrations = existing.get("integrations") or {}
 
-    existing_integrations = existing.get("integrations") or {}
+        # Trello secrets
+        trello = integrations.get("trello")
+        existing_trello = existing_integrations.get("trello") or {}
+        if isinstance(trello, dict):
+            if trello.get("api_key") == SECRET_MASK:
+                trello["api_key"] = existing_trello.get("api_key", "")
+            token_value = trello.get("token", "")
+            if token_value == SECRET_MASK or (not token_value and existing_trello.get("token")):
+                trello["token"] = existing_trello.get("token", "")
+            # Preserve token_generated_at from DB when not explicitly set
+            if not trello.get("token_generated_at"):
+                trello["token_generated_at"] = existing_trello.get("token_generated_at", "")
 
-    # Trello secrets
-    trello = integrations.get("trello")
-    existing_trello = existing_integrations.get("trello") or {}
-    if isinstance(trello, dict):
-        if trello.get("api_key") == SECRET_MASK:
-            trello["api_key"] = existing_trello.get("api_key", "")
-        token_value = trello.get("token", "")
-        if token_value == SECRET_MASK or (not token_value and existing_trello.get("token")):
-            trello["token"] = existing_trello.get("token", "")
-        # Preserve token_generated_at from DB when not explicitly set
-        if not trello.get("token_generated_at"):
-            trello["token_generated_at"] = existing_trello.get("token_generated_at", "")
+        # Jira secrets (per type)
+        jira = integrations.get("jira")
+        existing_jira = existing_integrations.get("jira") or {}
+        if isinstance(jira, dict):
+            for jira_type in ("software", "service_desk", "business"):
+                type_cfg = jira.get(jira_type)
+                existing_type = existing_jira.get(jira_type) or {}
+                if isinstance(type_cfg, dict):
+                    if type_cfg.get("api_key") == SECRET_MASK:
+                        type_cfg["api_key"] = existing_type.get("api_key", "")
 
-    # Jira secrets (per type)
-    jira = integrations.get("jira")
-    existing_jira = existing_integrations.get("jira") or {}
-    if isinstance(jira, dict):
-        for jira_type in ("software", "service_desk", "business"):
-            type_cfg = jira.get(jira_type)
-            existing_type = existing_jira.get(jira_type) or {}
-            if isinstance(type_cfg, dict):
-                if type_cfg.get("api_key") == SECRET_MASK:
-                    type_cfg["api_key"] = existing_type.get("api_key", "")
+    # MCP secrets — restore masked values from existing project doc.
+    # Submitted dict is authoritative for which keys exist (deletions persist).
+    mcp_secrets = data.get("mcp_secrets")
+    if isinstance(mcp_secrets, dict):
+        existing_secrets = existing.get("mcp_secrets") or {}
+        for key, value in list(mcp_secrets.items()):
+            if value == SECRET_MASK:
+                if key in existing_secrets:
+                    mcp_secrets[key] = existing_secrets[key]
+                else:
+                    # Mask submitted with no prior value → drop (validation
+                    # would otherwise reject empty value).
+                    mcp_secrets.pop(key, None)
 
 
 @traced_function("service.project.delete")
@@ -499,6 +519,8 @@ def clone_project(project_id):
         "human_gate": source["human_gate"],
         "team": source["team"],
         "integrations": raw_integrations,
+        "shared_mcp_tools": raw.get("shared_mcp_tools") or {},
+        "mcp_secrets": raw.get("mcp_secrets") or {},
     }
     return create_project(data)
 

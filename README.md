@@ -94,6 +94,60 @@ the `X-Request-ID` header. No extra wiring is required; the toggle is
 `OTEL_INSTRUMENT_AGENTS` (default `on`). Server `args` / `env` / `headers`
 are never logged or set as span attributes (see AGENTS rule 52).
 
+**Secrets** — `mcp_secrets` is the single global secret store for MCP in a
+project. It is shared by both:
+
+- project-level `shared_mcp_tools`, and
+- per-assistant `mcp_configuration` when `mcp_tools = dedicated`.
+
+Never embed raw API keys or tokens directly in either MCP JSON field. Store
+them in `mcp_secrets` (`{KEY: value}`, `KEY` must be `UPPER_SNAKE`) and
+reference them via `{KEY_NAME}` placeholders.
+
+Example (one global `mcp_secrets` consumed by both Shared and Dedicated MCP):
+
+```jsonc
+{
+	"mcp_secrets": {
+		"GITHUB_PAT": "ghp_xxx",
+		"NOTION_TOKEN": "secret_xxx"
+	},
+	"shared_mcp_tools": {
+		"mcpServers": {
+			"github": {
+				"transport": "http",
+				"url": "http://mcp-gateway:9000/github/mcp",
+				"headers": {
+					"Authorization": "Bearer {GITHUB_PAT}"
+				}
+			}
+		}
+	},
+	"agents": [
+		{
+			"name": "research_assistant",
+			"mcp_tools": "dedicated",
+			"mcp_configuration": {
+				"mcpServers": {
+					"notion": {
+						"command": "npx",
+						"args": ["-y", "@notionhq/notion-mcp-server"],
+						"env": {
+							"NOTION_TOKEN": "{NOTION_TOKEN}"
+						}
+					}
+				}
+			}
+		}
+	]
+}
+```
+
+Values are masked in the edit form, hidden in the readonly view, and
+substituted at runtime only inside `agents/mcp_tools.py`. The OTel
+`fingerprint` attribute is computed over the placeholder form so it stays
+stable across secret rotations.
+
 Full documentation: [docs/mcp_integration.md](docs/mcp_integration.md).
 
 ---

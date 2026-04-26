@@ -402,6 +402,38 @@ select.input {
   padding: $space-lg;
 }
 
+// ---------------------------------------------------------------------------
+// MCP Secrets — shared key/value/delete row pattern
+// (See .agents/skills/key_value_form_pattern/SKILL.md)
+// ---------------------------------------------------------------------------
+.mcp-secrets {
+  &__subsection {
+    margin-top: $space-md;
+    padding-top: $space-md;
+    border-top: 1px solid $color-border;
+  }
+
+  &__subsection-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: $space-xs;
+  }
+
+  &__rows {
+    display: flex;
+    flex-direction: column;
+    gap: $space-xs;
+  }
+
+  &__row {
+    display: grid;
+    grid-template-columns: 1fr 2fr auto;
+    gap: $space-xs;
+    align-items: center;
+  }
+}
+
 .agent-card {
   border: 1px solid $color-border;
   border-radius: $radius;

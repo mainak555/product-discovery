@@ -197,7 +197,8 @@
     <legend>Shared MCP Tools</legend>
     <p class="form-hint form-hint--compact">
       Project-wide MCP server pool. Used by every assistant agent whose <strong>MCP Tools</strong> field is set to <strong>Shared</strong>.
-      Leave empty to disable. JSON is validated on save.
+      Leave empty to disable. JSON is validated on save. Use <strong>MCP Secrets</strong> below as the single global secret store for
+      both this Shared configuration and every assistant's Dedicated MCP configuration.
     </p>
     <div class="form-group">
       <label for="shared_mcp_tools">Shared MCP Configuration (JSON)</label>
@@ -207,6 +208,42 @@
                 rows="10"
                 placeholder='{"mcpServers": {"filesystem": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/data"], "env": {}}}}'>{% if project.shared_mcp_tools %}{{ project.shared_mcp_tools|to_json }}{% endif %}</textarea>
       <small class="form-hint">JSON object with <code>mcpServers</code> map. Each server uses stdio (<code>command</code>/<code>args</code>/<code>env</code>) or streamable HTTP (<code>transport: "http"</code> + <code>url</code>/<code>headers</code>). Required when any agent uses Shared scope.</small>
+    </div>
+
+    <div class="mcp-secrets__subsection">
+      <div class="mcp-secrets__subsection-header">
+        <strong>MCP Secrets</strong>
+        <button type="button" class="btn btn--secondary btn--sm js-add-mcp-secret">+ Add Secret</button>
+      </div>
+      <p class="form-hint form-hint--compact">
+        This is the global secret store for all MCP configs in this project. Reference keys from any string value in
+        <strong>Shared MCP Tools</strong> and any assistant's <strong>Dedicated MCP configuration</strong> as <code>{KEY_NAME}</code>
+        (e.g. <code>"Authorization": "Bearer {GITHUB_PAT}"</code>).
+        Keys must be <code>UPPER_SNAKE_CASE</code>. Values are stored on the server, masked on read, and substituted at runtime — they are never sent to the browser after save.
+      </p>
+      <div class="mcp-secrets__rows" id="mcp-secrets-rows">
+        {% for key, value in project.mcp_secrets.items %}
+        <div class="mcp-secrets__row" data-secret-index="{{ forloop.counter0 }}">
+          <input type="text"
+                 class="input input--sm js-mcp-secret-key"
+                 name="mcp_secrets[{{ forloop.counter0 }}][key]"
+                 value="{{ key }}"
+                 placeholder="GITHUB_PAT"
+                 pattern="^[A-Z][A-Z0-9_]*$"
+                 autocomplete="off">
+          <input type="password"
+                 class="input input--sm js-mcp-secret-value"
+                 name="mcp_secrets[{{ forloop.counter0 }}][value]"
+                 value="{{ value }}"
+                 placeholder="secret value"
+                 autocomplete="new-password">
+          <button type="button"
+                  class="chat-session-item__delete js-delete-mcp-secret"
+                  aria-label="Remove secret"
+                  title="Remove secret">×</button>
+        </div>
+        {% endfor %}
+      </div>
     </div>
   </fieldset>
 

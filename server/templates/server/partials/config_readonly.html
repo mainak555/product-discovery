@@ -88,6 +88,12 @@
         <div class="agent-card__prompt agent-card__prompt--markdown markdown-prose" data-markdown>```json
 {{ project.shared_mcp_tools|to_json }}
 ```</div>
+        {% if project.mcp_secrets %}
+        <p class="form-hint form-hint--compact" style="margin-top: 0.5rem;">
+          🔒 {{ project.mcp_secrets|length }} secret{{ project.mcp_secrets|length|pluralize }} configured
+          ({{ project.mcp_secrets.keys|join:", " }}) — values hidden.
+        </p>
+        {% endif %}
       </div>
     </div>
   </div>

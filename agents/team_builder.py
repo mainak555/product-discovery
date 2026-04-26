@@ -25,7 +25,8 @@ def build_agent_runtime_spec(agent_config: dict, project: dict | None = None, ob
     workbenches: list = []
     if scope in ("shared", "dedicated") and project is not None:
         servers = resolve_mcp_servers_for_agent(agent_config, project)
-        workbenches = build_mcp_workbenches(servers, scope=scope)
+        secrets = project.get("mcp_secrets") or {}
+        workbenches = build_mcp_workbenches(servers, scope=scope, secrets=secrets)
 
     return {
         "name": agent_config["name"],

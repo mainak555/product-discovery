@@ -81,4 +81,35 @@ MCP (Model Context Protocol) tool wiring for assistant agents.
 - Spawning `McpWorkbench` outside `agents/mcp_tools.py`.
 - Adding SSE support back without explicit upstream re-deprecation reversal.
 - Storing MCP credentials in plaintext code (use env vars or secret managers).
+- Embedding raw secrets directly in `shared_mcp_tools` / `mcp_configuration`
+  instead of `mcp_secrets` + `{KEY_NAME}` placeholders.
+- Substituting `mcp_secrets` anywhere outside `agents/mcp_tools.py`.
+- Computing the OTel `fingerprint` over the substituted (post-secret) servers
+  dict — must always be over the placeholder dict.
+- Logging or rendering secret values in any template or log line.
 - Skipping `evict_team()` cleanup.
+
+## Secrets contract
+
+Project-level field `mcp_secrets: {KEY: value}` is the **only** approved
+location for credential material referenced by MCP servers. Rules:
+
+1. **Schema** (`server/schemas.py::validate_mcp_secrets`):
+   - keys match `^[A-Z][A-Z0-9_]*$` (UPPER_SNAKE),
+   - values are non-empty strings,
+   - no duplicates,
+   - every `{KEY}` placeholder referenced by `shared_mcp_tools` or any agent's
+     `mcp_configuration` must resolve to a defined key.
+2. **Round-trip** (`server/services.py`):
+   - `normalize_project()` returns `{KEY: SECRET_MASK}` for the UI;
+   - `_restore_masked_secrets()` restores `SECRET_MASK` to the DB value on
+     save; missing keys are dropped (user deletion).
+3. **UI** (`config_form.html` + `project_config.js`): follow
+   [`.agents/skills/key_value_form_pattern/SKILL.md`](../key_value_form_pattern/SKILL.md);
+   readonly view (`config_readonly.html`) MUST NOT render values.
+4. **Runtime** (`agents/mcp_tools.py::_substitute_secrets`): substitute strings
+   recursively across `command`, `args`, `env` values, `url`, `headers`
+   values, immediately before `McpWorkbench` construction.
+5. **Tracing**: fingerprint hashes the placeholder `mcpServers` dict, NOT the
+   substituted dict, so spans remain stable across secret rotation.
+

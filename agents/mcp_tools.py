@@ -11,6 +11,14 @@ Transport support:
 
 SSE is intentionally NOT supported (deprecated upstream).
 
+Secrets:
+  - Project-level `mcp_secrets` ({KEY: value}) are referenced from any string
+    inside `mcpServers` entries via `{KEY_NAME}` placeholders and substituted
+    at runtime by `_substitute_secrets()` immediately before `McpWorkbench`
+    construction. The fingerprint logged in span attributes is computed over
+    the **placeholder** form (pre-substitution) so it remains stable across
+    secret rotations and never contains credential material.
+
 Logging contract (see .agents/skills/observability_logging/SKILL.md):
   - `agents.mcp.created`  — INFO; payload contains scope + server names only.
   - `agents.mcp.closed`   — INFO; payload contains scope + server names only.
@@ -24,6 +32,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 from core.tracing import traced_function
@@ -32,6 +41,8 @@ if TYPE_CHECKING:
     from autogen_ext.tools.mcp import McpWorkbench
 
 logger = logging.getLogger(__name__)
+
+_PLACEHOLDER_RE = re.compile(r"\{([A-Z][A-Z0-9_]*)\}")
 
 
 # session_id → list[McpWorkbench] — owned by the team runtime cache so that
@@ -43,6 +54,26 @@ def _server_fingerprint(servers: dict) -> str:
     """Stable hash of a normalized mcpServers dict (used for de-dup/caching)."""
     blob = json.dumps(servers, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
+
+
+def _substitute_secrets(node: Any, secrets: dict) -> Any:
+    """
+    Recursively replace `{KEY}` placeholders in every string scalar with
+    `secrets[KEY]`. Unknown placeholders are left intact (validation rejects
+    them at save time, so they should not occur at runtime).
+    """
+    if not secrets:
+        return node
+    if isinstance(node, str):
+        def _repl(match: re.Match) -> str:
+            key = match.group(1)
+            return secrets.get(key, match.group(0))
+        return _PLACEHOLDER_RE.sub(_repl, node)
+    if isinstance(node, dict):
+        return {k: _substitute_secrets(v, secrets) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_substitute_secrets(v, secrets) for v in node]
+    return node
 
 
 def _build_server_params(name: str, entry: dict):
@@ -66,6 +97,11 @@ def resolve_mcp_servers_for_agent(agent_cfg: dict, project: dict) -> dict:
     """
     Return the merged mcpServers dict that applies to a given agent based
     on its scope. Empty dict when no MCP tools should be attached.
+
+    Secrets are NOT substituted here — placeholders are preserved so that the
+    span fingerprint computed in `build_mcp_workbenches()` remains stable
+    across secret rotations. Substitution happens just before
+    `McpWorkbench` construction.
     """
     scope = (agent_cfg.get("mcp_tools") or "none").strip().lower()
     if scope == "dedicated":
@@ -78,12 +114,17 @@ def resolve_mcp_servers_for_agent(agent_cfg: dict, project: dict) -> dict:
 
 
 @traced_function("agents.mcp.workbench_built")
-def build_mcp_workbenches(servers: dict, scope: str) -> list[Any]:
+def build_mcp_workbenches(servers: dict, scope: str, secrets: dict | None = None) -> list[Any]:
     """
     Construct one `McpWorkbench` per server entry. The workbenches are NOT
     started here — autogen lazily starts each workbench on first tool call,
     or `register_session_workbenches()` can attach them to a session for
     deterministic teardown via `close_session_workbenches()`.
+
+    `secrets` (project-level `mcp_secrets`) are substituted into every string
+    value of each server entry before `McpWorkbench` construction. The
+    fingerprint reported in logs is computed over the **placeholder** dict so
+    it stays stable when secret values rotate and never carries credentials.
 
     Returns an empty list if `servers` is empty.
     """
@@ -92,10 +133,14 @@ def build_mcp_workbenches(servers: dict, scope: str) -> list[Any]:
 
     from autogen_ext.tools.mcp import McpWorkbench
 
+    fingerprint = _server_fingerprint(servers)
+    secrets = secrets or {}
+
     workbenches: list[Any] = []
     server_names: list[str] = []
     for name, entry in servers.items():
-        params = _build_server_params(name, entry)
+        resolved_entry = _substitute_secrets(entry, secrets)
+        params = _build_server_params(name, resolved_entry)
         workbenches.append(McpWorkbench(server_params=params))
         server_names.append(name)
 
@@ -105,7 +150,7 @@ def build_mcp_workbenches(servers: dict, scope: str) -> list[Any]:
             "scope": scope,
             "server_count": len(workbenches),
             "server_names": server_names,
-            "fingerprint": _server_fingerprint(servers),
+            "fingerprint": fingerprint,
         },
     )
     return workbenches

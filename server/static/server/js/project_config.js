@@ -160,6 +160,58 @@ document.addEventListener("DOMContentLoaded", function () {
       var sharedResult = tryParseJson(sharedTa.value, "Shared MCP Tools");
       if (!sharedResult.ok) errors.push(sharedResult.error);
     }
+
+    // Validate MCP secret keys: UPPER_SNAKE, unique, value present
+    var keyRe = /^[A-Z][A-Z0-9_]*$/;
+    var seenKeys = Object.create(null);
+    var definedKeys = Object.create(null);
+    form.querySelectorAll(".mcp-secrets__row").forEach(function (row) {
+      var keyInput = row.querySelector(".js-mcp-secret-key");
+      var valInput = row.querySelector(".js-mcp-secret-value");
+      var key = keyInput ? (keyInput.value || "").trim() : "";
+      var val = valInput ? valInput.value : "";
+      if (!key && !val) return;
+      if (!key) {
+        errors.push("MCP Secrets: a row has a value but no key.");
+        return;
+      }
+      if (!keyRe.test(key)) {
+        errors.push("MCP Secrets: '" + key + "' must be UPPER_SNAKE_CASE.");
+        return;
+      }
+      if (seenKeys[key]) {
+        errors.push("MCP Secrets: duplicate key '" + key + "'.");
+        return;
+      }
+      seenKeys[key] = true;
+      if (val === "") {
+        errors.push("MCP Secrets: '" + key + "' value is empty.");
+        return;
+      }
+      definedKeys[key] = true;
+    });
+
+    // Warn on unresolved {KEY} placeholders in shared + dedicated MCP JSON
+    var placeholderRe = /\{([A-Z][A-Z0-9_]*)\}/g;
+    var jsonTextareas = [];
+    if (sharedTa) jsonTextareas.push(sharedTa);
+    form.querySelectorAll(".js-mcp-dedicated-json").forEach(function (ta) {
+      jsonTextareas.push(ta);
+    });
+    var referenced = Object.create(null);
+    jsonTextareas.forEach(function (ta) {
+      var text = ta.value || "";
+      var m;
+      while ((m = placeholderRe.exec(text)) !== null) {
+        referenced[m[1]] = true;
+      }
+    });
+    Object.keys(referenced).forEach(function (k) {
+      if (!definedKeys[k]) {
+        errors.push("MCP configuration references undefined secret '{" + k + "}'.");
+      }
+    });
+
     return errors;
   }
 
@@ -340,6 +392,47 @@ document.addEventListener("DOMContentLoaded", function () {
 
   document.body.addEventListener("htmx:afterSwap", function () {
     syncFormState();
+  });
+
+  // ---- MCP Secrets KV rows ----
+  function reindexMcpSecrets() {
+    var container = document.getElementById("mcp-secrets-rows");
+    if (!container) return;
+    container.querySelectorAll(".mcp-secrets__row").forEach(function (row, idx) {
+      row.setAttribute("data-secret-index", idx);
+      var k = row.querySelector(".js-mcp-secret-key");
+      var v = row.querySelector(".js-mcp-secret-value");
+      if (k) k.name = "mcp_secrets[" + idx + "][key]";
+      if (v) v.name = "mcp_secrets[" + idx + "][value]";
+    });
+  }
+
+  document.body.addEventListener("click", function (e) {
+    if (e.target.matches(".js-add-mcp-secret")) {
+      var container = document.getElementById("mcp-secrets-rows");
+      if (!container) return;
+      var idx = container.querySelectorAll(".mcp-secrets__row").length;
+      var html =
+        '<div class="mcp-secrets__row" data-secret-index="' + idx + '">' +
+          '<input type="text" class="input input--sm js-mcp-secret-key" ' +
+            'name="mcp_secrets[' + idx + '][key]" placeholder="GITHUB_PAT" ' +
+            'pattern="^[A-Z][A-Z0-9_]*$" autocomplete="off">' +
+          '<input type="password" class="input input--sm js-mcp-secret-value" ' +
+            'name="mcp_secrets[' + idx + '][value]" placeholder="secret value" ' +
+            'autocomplete="new-password">' +
+          '<button type="button" class="chat-session-item__delete js-delete-mcp-secret" ' +
+            'aria-label="Remove secret" title="Remove secret">×</button>' +
+        '</div>';
+      container.insertAdjacentHTML("beforeend", html);
+      return;
+    }
+    if (e.target.matches(".js-delete-mcp-secret")) {
+      var row = e.target.closest(".mcp-secrets__row");
+      if (row) {
+        row.remove();
+        reindexMcpSecrets();
+      }
+    }
   });
 
   syncFormState();

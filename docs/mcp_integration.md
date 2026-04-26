@@ -142,6 +142,71 @@ Order of operations in `agents/team_builder.py::build_team()`:
 - Streamable HTTP MCP servers should be reached over the cluster-internal
   network when possible (in compose/k8s, use the `mcp-gateway` service name).
 
+## Secrets management (`mcp_secrets`)
+
+Credential material referenced by MCP servers MUST live in the project-level
+`mcp_secrets` dict and be injected into `mcpServers` entries via `{KEY_NAME}`
+placeholders. The raw values never appear in `shared_mcp_tools` or per-agent
+`mcp_configuration` JSON.
+
+### Schema
+
+```json
+{
+  "mcp_secrets": {
+    "GITHUB_PAT": "ghp_xxxxxxxxxxxx",
+    "DB_PASSWORD": "s3cret"
+  },
+  "shared_mcp_tools": {
+    "mcpServers": {
+      "github": {
+        "transport": "http",
+        "url": "https://mcp.example.com/github",
+        "headers": { "Authorization": "Bearer {GITHUB_PAT}" }
+      },
+      "postgres": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-postgres"],
+        "env": { "PGPASSWORD": "{DB_PASSWORD}" }
+      }
+    }
+  }
+}
+```
+
+### Validation rules
+
+- `mcp_secrets` keys match `^[A-Z][A-Z0-9_]*$` (UPPER_SNAKE).
+- Values are non-empty strings.
+- Every `{KEY}` placeholder used inside `shared_mcp_tools` or any agent's
+  `mcp_configuration` must have a matching entry in `mcp_secrets` —
+  `validate_project()` raises `ValueError` otherwise.
+
+### Round-trip masking
+
+- `normalize_project()` replaces every secret value with `SECRET_MASK`
+  (`••••••••`) so the edit form re-renders password inputs without leaking
+  values.
+- `_restore_masked_secrets()` swaps `SECRET_MASK` back to the existing DB
+  value on save. Keys absent from the submitted payload are treated as
+  user deletions and dropped.
+- The readonly view (`config_readonly.html`) MUST NOT render secret values —
+  only an optional `🔒 N secrets configured` count badge listing key names.
+
+### Runtime substitution
+
+`agents/mcp_tools.py::_substitute_secrets()` recursively walks each server
+entry just before constructing `McpWorkbench` and substitutes every
+`{KEY_NAME}` occurrence in any string scalar (`command`, `args` items, `env`
+values, `url`, `headers` values). Substitution lives **only** in
+`agents/mcp_tools.py`; `server/` code never sees substituted values.
+
+### Tracing fingerprint
+
+`build_mcp_workbenches()` computes the `fingerprint` span attribute over the
+**placeholder** `mcpServers` dict (pre-substitution), so the value remains
+stable across secret rotations and never carries credential material.
+
 ## Deployment topologies
 
 See [../deployments/README.md](../deployments/README.md) for the topology

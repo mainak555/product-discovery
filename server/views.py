@@ -170,7 +170,29 @@ def _build_project_data(post_data, existing_project=None):
         },
         "integrations": integrations,
         "shared_mcp_tools": post_data.get("shared_mcp_tools", ""),
+        "mcp_secrets": _parse_mcp_secrets(post_data),
     }
+
+
+def _parse_mcp_secrets(post_data):
+    """
+    Extract MCP secrets dict from POST form fields.
+
+    Form fields: mcp_secrets[N][key], mcp_secrets[N][value]
+    Returns {KEY: value}. Skips rows with empty key.
+    """
+    secrets = {}
+    idx = 0
+    while (
+        f"mcp_secrets[{idx}][key]" in post_data
+        or f"mcp_secrets[{idx}][value]" in post_data
+    ):
+        key = post_data.get(f"mcp_secrets[{idx}][key]", "").strip()
+        value = post_data.get(f"mcp_secrets[{idx}][value]", "")
+        if key:
+            secrets[key] = value
+        idx += 1
+    return secrets
 
 
 def _normalize_export_agents(raw_agents):
@@ -630,6 +652,12 @@ async def chat_session_run(request, session_id):
     project = await asyncio.to_thread(services.get_project, session["project_id"])
     if project is None:
         return _json_error("Project not found", 404)
+
+    # Runtime needs unmasked MCP secrets for placeholder substitution; the
+    # normalized project carries SECRET_MASK values for UI safety.
+    raw_project = await asyncio.to_thread(services.get_project_raw, session["project_id"])
+    if isinstance(raw_project, dict):
+        project["mcp_secrets"] = raw_project.get("mcp_secrets") or {}
 
     task = request.POST.get("task", "").strip()
 

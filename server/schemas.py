@@ -1,6 +1,7 @@
 """Input validation for project configuration data."""
 
 import json
+import re
 
 from .model_catalog import get_agent_model_names
 
@@ -10,6 +11,12 @@ JIRA_TYPES = ("software", "service_desk", "business")
 MCP_TOOL_SCOPES = ("none", "shared", "dedicated")
 MCP_HTTP_TRANSPORT = "http"
 MCP_DEPRECATED_TRANSPORTS = ("sse",)
+
+# MCP secret keys are UPPER_SNAKE identifiers; placeholders use {KEY_NAME}
+# inside any string value of mcp_configuration / shared_mcp_tools and are
+# resolved at runtime in agents/mcp_tools.py.
+MCP_SECRET_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+MCP_PLACEHOLDER_RE = re.compile(r"\{([A-Z][A-Z0-9_]*)\}")
 
 
 def _coerce_mcp_dict(raw, label):
@@ -120,6 +127,58 @@ def validate_mcp_configuration(raw, label="mcp_configuration"):
         cleaned_servers[name.strip()] = _validate_mcp_server_entry(name.strip(), entry, label)
 
     return {"mcpServers": cleaned_servers}
+
+
+def validate_mcp_secrets(raw, label="mcp_secrets"):
+    """
+    Validate the project-level MCP secrets dict.
+
+    Accepts a dict {KEY: value} where KEY matches MCP_SECRET_KEY_RE
+    (UPPER_SNAKE) and value is a non-empty string. Returns a cleaned dict.
+    Empty/missing input returns {}.
+    """
+    if raw in (None, "", {}):
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"{label}: must be a JSON object of KEY → value strings.")
+    cleaned = {}
+    for key, value in raw.items():
+        if not isinstance(key, str):
+            raise ValueError(f"{label}: keys must be strings.")
+        key = key.strip()
+        if not key:
+            continue
+        if not MCP_SECRET_KEY_RE.match(key):
+            raise ValueError(
+                f"{label}: key '{key}' must be UPPER_SNAKE_CASE "
+                "(letters, digits, underscores; must start with a letter)."
+            )
+        if key in cleaned:
+            raise ValueError(f"{label}: duplicate key '{key}'.")
+        if not isinstance(value, str) or value == "":
+            raise ValueError(f"{label}: value for '{key}' must be a non-empty string.")
+        cleaned[key] = value
+    return cleaned
+
+
+def _iter_mcp_string_values(node):
+    """Yield every string scalar in a nested dict/list structure."""
+    if isinstance(node, str):
+        yield node
+    elif isinstance(node, dict):
+        for v in node.values():
+            yield from _iter_mcp_string_values(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _iter_mcp_string_values(v)
+
+
+def _extract_mcp_placeholders(servers):
+    """Return the set of {KEY} placeholder names referenced anywhere in servers."""
+    keys = set()
+    for s in _iter_mcp_string_values(servers):
+        keys.update(MCP_PLACEHOLDER_RE.findall(s))
+    return keys
 
 
 def validate_agent(data):
@@ -544,6 +603,22 @@ def validate_project(data):
             "when one or more assistant agents use mcp_tools = 'shared'."
         )
 
+    mcp_secrets = validate_mcp_secrets(data.get("mcp_secrets"))
+    # Verify every {KEY} placeholder referenced in shared or per-agent MCP
+    # configs has a matching entry in mcp_secrets.
+    referenced = set()
+    referenced.update(_extract_mcp_placeholders(shared_mcp_tools))
+    for a in agents:
+        if a.get("mcp_tools") == "dedicated":
+            referenced.update(_extract_mcp_placeholders(a.get("mcp_configuration") or {}))
+    missing = sorted(k for k in referenced if k not in mcp_secrets)
+    if missing:
+        raise ValueError(
+            "MCP configuration references undefined secret(s): "
+            + ", ".join("{" + k + "}" for k in missing)
+            + ". Add them under 'MCP Secrets' or remove the placeholder."
+        )
+
     return {
         "project_name": project_name,
         "objective": objective,
@@ -552,4 +627,5 @@ def validate_project(data):
         "team": team,
         "integrations": integrations,
         "shared_mcp_tools": shared_mcp_tools,
+        "mcp_secrets": mcp_secrets,
     }
