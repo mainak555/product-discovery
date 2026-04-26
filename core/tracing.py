@@ -218,32 +218,102 @@ class AutoGenEventSpanBridgeHandler(logging.Handler):
         except Exception:
             event_data = {"message": raw_message}
 
-        event_type = str(event_data.get("type", "event")).lower()
-        span_name = f"autogen.event.{event_type}"
+        event_type_raw = str(event_data.get("type", "event"))
+        event_type = event_type_raw.lower()
 
-        attrs: dict[str, Any] = {
+        # Base attributes shared by every span this event produces.
+        # `source` names the emitting agent on agentchat events;
+        # `agent_id` is the legacy field used by autogen_core events.
+        base_attrs: dict[str, Any] = {
             "gen_ai.system": "autogen",
-            "autogen.event.type": event_data.get("type", "event"),
+            "autogen.event.type": event_type_raw,
             "autogen.event.logger": record.name,
             "autogen.event.level": record.levelname,
             "langfuse.observation.metadata.autogen_event_raw": raw_message,
         }
-
-        if "agent_id" in event_data and event_data.get("agent_id") is not None:
-            attrs["autogen.agent.id"] = str(event_data["agent_id"])
+        source = event_data.get("source") or event_data.get("agent_id")
+        if source is not None:
+            base_attrs["autogen.agent.id"] = str(source)
         if "prompt_tokens" in event_data:
-            attrs["gen_ai.usage.prompt_tokens"] = int(event_data["prompt_tokens"])
+            base_attrs["gen_ai.usage.prompt_tokens"] = int(event_data["prompt_tokens"])
         if "completion_tokens" in event_data:
-            attrs["gen_ai.usage.completion_tokens"] = int(event_data["completion_tokens"])
+            base_attrs["gen_ai.usage.completion_tokens"] = int(event_data["completion_tokens"])
 
-        with tracer.start_as_current_span(span_name) as span:
-            for key, value in attrs.items():
-                if value is None:
+        def _apply_base(span: Any) -> None:
+            for k, v in base_attrs.items():
+                if v is None:
                     continue
                 try:
-                    span.set_attribute(key, value)
+                    span.set_attribute(k, v)
                 except Exception:
                     continue
+
+        # ------------------------------------------------------------------
+        # ToolCallRequestEvent — LLM requested one or more tool calls.
+        # AutoGen shape:
+        #   {"type": "ToolCallRequestEvent", "source": "<agent>",
+        #    "content": [{"id": "call_xxx", "name": "<tool>", "arguments": "..."}]}
+        # One span per item so each tool call is independently visible.
+        # ------------------------------------------------------------------
+        if event_type == "toolcallrequestevent":
+            content = event_data.get("content") or [{}]
+            for item in content:
+                tool_name = str(item.get("name") or "unknown_tool")
+                call_id = str(item.get("id") or "")
+                arguments = item.get("arguments")
+                with tracer.start_as_current_span(f"mcp.tool.request {tool_name}") as span:
+                    _apply_base(span)
+                    try:
+                        span.set_attribute("gen_ai.tool.name", tool_name)
+                        if call_id:
+                            span.set_attribute("gen_ai.tool.call.id", call_id)
+                    except Exception:
+                        pass
+                    if arguments is not None:
+                        set_payload_attribute(span, "gen_ai.tool.arguments", arguments)
+                    if record.levelno >= logging.ERROR:
+                        span.set_status(Status(StatusCode.ERROR, raw_message[:300]))
+            return
+
+        # ------------------------------------------------------------------
+        # ToolCallResultEvent — tool returned a response to the agent.
+        # AutoGen shape:
+        #   {"type": "ToolCallResultEvent", "source": "<agent>",
+        #    "content": [{"call_id": "call_xxx", "name": "<tool>",
+        #                 "content": "<result>", "is_error": false}]}
+        # is_error=True marks the span ERROR so failures surface immediately.
+        # ------------------------------------------------------------------
+        if event_type == "toolcallresultevent":
+            content = event_data.get("content") or [{}]
+            for item in content:
+                tool_name = str(item.get("name") or "unknown_tool")
+                call_id = str(item.get("call_id") or "")
+                result = item.get("content")
+                is_error = bool(item.get("is_error", False))
+                with tracer.start_as_current_span(f"mcp.tool.result {tool_name}") as span:
+                    _apply_base(span)
+                    try:
+                        span.set_attribute("gen_ai.tool.name", tool_name)
+                        if call_id:
+                            span.set_attribute("gen_ai.tool.call.id", call_id)
+                        span.set_attribute("gen_ai.tool.is_error", is_error)
+                    except Exception:
+                        pass
+                    if result is not None:
+                        set_payload_attribute(span, "gen_ai.tool.result", result)
+                    if is_error:
+                        span.set_status(
+                            Status(StatusCode.ERROR, str(result)[:300] if result else "tool_error")
+                        )
+                    elif record.levelno >= logging.ERROR:
+                        span.set_status(Status(StatusCode.ERROR, raw_message[:300]))
+            return
+
+        # ------------------------------------------------------------------
+        # Generic events (LLMCallEvent, ThoughtEvent, streaming chunks, etc.)
+        # ------------------------------------------------------------------
+        with tracer.start_as_current_span(f"autogen.event.{event_type}") as span:
+            _apply_base(span)
 
             messages = event_data.get("messages")
             if messages is not None:
@@ -252,15 +322,16 @@ class AutoGenEventSpanBridgeHandler(logging.Handler):
             if response is not None:
                 set_payload_attribute(span, "output.value", response)
 
+            # Fallback: top-level tool fields emitted by non-standard events.
             if "tool_name" in event_data:
                 try:
-                    span.set_attribute("gen_ai.tool.name", str(event_data.get("tool_name")))
+                    span.set_attribute("gen_ai.tool.name", str(event_data["tool_name"]))
                 except Exception:
                     pass
             if "arguments" in event_data:
-                set_payload_attribute(span, "gen_ai.tool.arguments", event_data.get("arguments"))
+                set_payload_attribute(span, "gen_ai.tool.arguments", event_data["arguments"])
             if "result" in event_data:
-                set_payload_attribute(span, "gen_ai.tool.result", event_data.get("result"))
+                set_payload_attribute(span, "gen_ai.tool.result", event_data["result"])
 
             if record.levelno >= logging.ERROR:
                 span.set_status(Status(StatusCode.ERROR, raw_message[:300]))

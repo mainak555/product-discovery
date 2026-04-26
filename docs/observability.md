@@ -85,7 +85,7 @@ verbosity per concern without code changes. All toggles accept
 |---|---|---|---|---|
 | **HTTP / API** (Django + outbound `requests`) | `OTEL_INSTRUMENT_HTTP` | `on` | One span per Django request; one span per outbound HTTP call (Trello, Jira, Langfuse export, etc.) | Disable in narrow load tests where you only care about agent latency. |
 | **Database** (pymongo) | `OTEL_INSTRUMENT_MONGO` | `off` | One span per Mongo command (`find`, `update_one`, etc.) | Enable when diagnosing slow queries, connection storms, or unexpected reads. Off by default because trace volume balloons quickly. |
-| **LLM / Agents** (AutoGen event bridge) | `OTEL_INSTRUMENT_AGENTS` | `on` | `autogen.event.LLMCall`, `autogen.event.ToolCall`, prompts, model responses, token usage | Disable when running purely-deterministic flows (Trello/Jira pushes without an agent run) and you want to suppress LLM payloads from the OTLP backend. |
+| **LLM / Agents** (AutoGen event bridge) | `OTEL_INSTRUMENT_AGENTS` | `on` | `autogen.event.<type>` (LLM calls, thought events, streaming chunks); `mcp.tool.request <name>` (one span per tool call requested, with `gen_ai.tool.arguments`); `mcp.tool.result <name>` (one span per tool result, with `gen_ai.tool.result`; `StatusCode.ERROR` when `is_error=true`); token usage on LLM spans | Disable when running purely-deterministic flows (Trello/Jira pushes without an agent run) and you want to suppress LLM payloads from the OTLP backend. |
 | **Service mutations** (manual `@traced_function`) | *(none — always on)* | n/a | `service.project.create`, `service.chat.create`, `service.trello.export.push`, `service.jira.<type>.push_issues`, etc. | Always emitted because each callsite is explicitly chosen by the developer; spans are cheap and namespaced. |
 
 ### Common combinations
@@ -117,7 +117,7 @@ LOG_LEVEL=DEBUG
 | Outbound HTTP (Trello, Jira, future providers) | Auto (`RequestsInstrumentor`) + shared `core/http_tracing.py` helper (`instrument_http_response`) in client `_handle_api_response()`/fallback branches — gated by `OTEL_INSTRUMENT_HTTP` | `HTTP POST` with `<provider>.action`, `http.url` (redacted when needed), `http.status_code`, `input.value`, `output.value`, and `<provider>.error.*` on non-2xx |
 | MongoDB ops | Auto (`PymongoInstrumentor`) — gated by `OTEL_INSTRUMENT_MONGO` (default off) | `mongo.find`, `mongo.insert_one` |
 | Service-layer mutations | Manual `@traced_function` (always on) | `service.project.create`, `service.chat.create`, `service.trello.export.push`, `service.jira.<type>.push_issues` |
-| AutoGen agent runs | Event-log bridge — gated by `OTEL_INSTRUMENT_AGENTS` | `autogen.event.LLMCall`, `autogen.event.ToolCall` with full payloads |
+| AutoGen agent runs | Event-log bridge — gated by `OTEL_INSTRUMENT_AGENTS` | `autogen.event.<type>` (LLM calls, thought events); `mcp.tool.request <name>` (tool requested — `gen_ai.tool.name`, `gen_ai.tool.call.id`, `gen_ai.tool.arguments`); `mcp.tool.result <name>` (tool result — `gen_ai.tool.result`, `gen_ai.tool.is_error`; ERROR status on `is_error=true`). Every span carries `autogen.agent.id` from the event `source` field. |
 
 ### Trace Hierarchy
 
@@ -130,11 +130,16 @@ Django request span                              [auto · OTEL_INSTRUMENT_HTTP]
 └─ @traced_function on view / service entry      [always on]
    └─ service.* mutation                         [always on]
       └─ AutoGen agent run                       [bridge · OTEL_INSTRUMENT_AGENTS]
-         ├─ chat <model>            (LLM call)   [autogen-core]
+         ├─ autogen.event.<type>    (LLM call)   [bridge — gen_ai.usage.* token counts]
          │  └─ HTTP POST <provider> (LLM API)    [auto · OTEL_INSTRUMENT_HTTP]
-         └─ execute_tool <name>     (MCP tool)   [autogen-core]
-            └─ HTTP POST <mcp-gateway>           [auto · only for streamable HTTP transport]
-                                                  (stdio MCP runs in a child process — no HTTP span)
+         ├─ mcp.tool.request <name>              [bridge — ToolCallRequestEvent]
+         │    gen_ai.tool.name, gen_ai.tool.call.id, gen_ai.tool.arguments
+         ├─ execute_tool <name>     (MCP tool)   [autogen-core McpWorkbench]
+         │  └─ HTTP POST <mcp-gateway>           [auto · streamable HTTP only]
+         │                                        (stdio runs in child process — no HTTP span)
+         └─ mcp.tool.result <name>              [bridge — ToolCallResultEvent]
+              gen_ai.tool.name, gen_ai.tool.call.id, gen_ai.tool.result
+              gen_ai.tool.is_error  [StatusCode.ERROR when true]
 
 Sibling spans on the same trace:
 └─ mongo.<op>                                    [auto · OTEL_INSTRUMENT_MONGO, off by default]
