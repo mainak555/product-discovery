@@ -32,7 +32,9 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import re
+import shutil
 from typing import TYPE_CHECKING, Any
 
 from core.tracing import traced_function
@@ -76,6 +78,44 @@ def _substitute_secrets(node: Any, secrets: dict) -> Any:
     return node
 
 
+def _resolve_stdio_command(server_name: str, command: str, env: dict | None = None) -> str:
+    """
+    Resolve a stdio command to an executable path when possible.
+
+    This fails fast with a readable ValueError when the command is not
+    available on the current host, so users get an actionable message instead
+    of a deep MCP/asyncio subprocess traceback.
+    """
+    if not command:
+        raise ValueError(f"MCP server '{server_name}' stdio command is empty.")
+
+    command = command.strip()
+
+    # Preserve explicit paths as-is when they exist.
+    expanded = os.path.expandvars(os.path.expanduser(command))
+    if os.path.isabs(expanded) or any(sep in expanded for sep in ("/", "\\")):
+        if os.path.exists(expanded):
+            return expanded
+        raise ValueError(
+            f"MCP server '{server_name}' stdio command path does not exist on this host. "
+            "Use a valid executable path or install the required runtime."
+        )
+
+    merged_env = dict(os.environ)
+    if env:
+        merged_env.update(env)
+    resolved = shutil.which(command, path=merged_env.get("PATH"))
+    if resolved:
+        return resolved
+
+    raise ValueError(
+        f"MCP server '{server_name}' stdio command is not executable on this host. "
+        "Ensure the command is installed and available on PATH. "
+        "On Windows, install Node.js for npx-based servers or provide an explicit path "
+        "to the launcher (for example, C:\\Program Files\\nodejs\\npx.cmd)."
+    )
+
+
 def _build_server_params(name: str, entry: dict):
     """Map a validated mcpServers[name] entry to autogen_ext server params."""
     from autogen_ext.tools.mcp import StdioServerParams, StreamableHttpServerParams
@@ -86,8 +126,13 @@ def _build_server_params(name: str, entry: dict):
             url=entry["url"],
             headers=entry.get("headers") or None,
         )
-    return StdioServerParams(
+    resolved_command = _resolve_stdio_command(
+        server_name=name,
         command=entry["command"],
+        env=entry.get("env") or None,
+    )
+    return StdioServerParams(
+        command=resolved_command,
         args=list(entry.get("args") or []),
         env=dict(entry.get("env") or {}),
     )

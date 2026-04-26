@@ -66,6 +66,80 @@ Each `<server-entry>` is one of:
 }
 ```
 
+#### Stdio command resolution & troubleshooting
+
+`agents/mcp_tools.py::_resolve_stdio_command()` preflights the configured
+`command` before constructing the workbench, so a missing runtime fails fast
+with a readable `ValueError` (event `agents.mcp.workbench_built` ends in
+ERROR with description `MCP server '<name>' stdio command …`) instead of a
+deep MCP/asyncio `WinError 2` traceback.
+
+Resolution rules:
+
+- If `command` looks like a path (absolute, or contains `/` or `\`) it must
+  exist on disk as written (after `expandvars` / `expanduser`).
+- Otherwise `command` is treated as a bare executable name and resolved via
+  `shutil.which(command, path=env["PATH"])`.
+
+When the resolver rejects an entry, fix the project's `shared_mcp_tools` (or
+the agent's `mcp_configuration`) using one of the patterns below. The
+[`tavily-remote-mcp`](https://www.npmjs.com/package/tavily-remote-mcp)
+server is used as the example:
+
+**Option A — bare command (preferred, portable across hosts):**
+
+```jsonc
+{
+  "mcpServers": {
+    "tavily-remote-mcp": {
+      "command": "npx",
+      "args": ["-y", "tavily-remote-mcp"],
+      "env": { "TAVILY_API_KEY": "{TAVILY_API_KEY}" }
+    }
+  }
+}
+```
+
+Requires Node.js on `PATH` inside the process that runs the agent worker
+(standalone deployment bundles it; compose/k8s rely on the `mcp-gateway`
+sidecar instead — see [Streamable HTTP](#streamable-http) below).
+
+**Option B — explicit absolute path that actually exists on the host:**
+
+```jsonc
+{
+  "mcpServers": {
+    "tavily-remote-mcp": {
+      "command": "C:\\Program Files\\nodejs\\npx.cmd",
+      "args": ["-y", "tavily-remote-mcp"],
+      "env": { "TAVILY_API_KEY": "{TAVILY_API_KEY}" }
+    }
+  }
+}
+```
+
+Verify with `Test-Path "C:\Program Files\nodejs\npx.cmd"` (Windows) or
+`test -x /usr/local/bin/npx` (POSIX) before saving.
+
+**Option C — switch to streamable HTTP (no local stdio runtime needed):**
+
+```jsonc
+{
+  "mcpServers": {
+    "tavily-remote-mcp": {
+      "transport": "http",
+      "url": "https://mcp.tavily.com/mcp/?tavilyApiKey={TAVILY_API_KEY}",
+      "headers": {}
+    }
+  }
+}
+```
+
+In all three cases the credential lives in the project-level `mcp_secrets`
+dict (`{"TAVILY_API_KEY": "tvly-…"}`) and is referenced via the
+`{TAVILY_API_KEY}` placeholder — never inlined as a raw value (see
+[Secrets management](#secrets-management-mcp_secrets)).
+
 ### Streamable HTTP
 
 ```jsonc

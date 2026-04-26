@@ -56,6 +56,70 @@ streaming of agent output.
 
 ---
 
+## Models & `model_info`
+
+The model catalog lives in [`agent_models.json`](agent_models.json). Each key
+is the model name shown in the UI; the value declares the provider, optional
+endpoint/version overrides, and — crucially — a `model_info` capability map.
+
+```jsonc
+{
+  "gpt-5.4-mini": {
+    "provider": "azure_openai",
+    "api_version": "2024-12-01-preview",
+    "model": "gpt-5.4-mini-2026-03-17",
+    "model_info": {
+      "function_calling": true,
+      "json_output": true,
+      "structured_output": true,
+      "vision": true,
+      "family": "gpt-5"
+    }
+  }
+}
+```
+
+`model_info` advertises model capabilities to AutoGen. The factory default
+is conservative — every flag is `false` — so any provider that always
+forwards `model_info` (Azure OpenAI, Azure Anthropic, Google Gemini) **must**
+declare overrides per model in `agent_models.json`, otherwise the model will
+behave as if it has no capabilities at all.
+
+| Field | Set `true` when… |
+| --- | --- |
+| `function_calling` | The model supports tool / function calling |
+| `json_output` | The model can return JSON-mode responses |
+| `structured_output` | The model supports a JSON schema for structured output |
+| `vision` | The model accepts image inputs |
+| `family` | Identifier such as `gpt-5`, `gpt-4.1`, `claude-sonnet-4`, `deepseek-v3` |
+
+### `function_calling` is required for MCP tools
+
+Whenever an agent has `mcp_tools` set to `shared` or `dedicated`, AutoGen
+forwards the attached `McpWorkbench` tools to the model client. If the
+resolved `model_info.function_calling` is `false`, the underlying client
+raises:
+
+```text
+ValueError: Model does not support function calling
+```
+
+So when introducing a new model that should be usable with MCP tools, the
+model's catalog entry **must** declare `"function_calling": true`. Models
+that do not support tool calling (some reasoning, audio, embedding) must be
+paired only with agents whose `mcp_tools = "none"`.
+
+For the `openai` and `anthropic` direct providers, AutoGen has an internal
+table of known model names (e.g. `gpt-4o`, `claude-3-7-sonnet`), so
+`model_info` can be omitted for those; for any custom or unrecognized name,
+declare it explicitly.
+
+See [`docs/agent_factory.md`](docs/agent_factory.md) for the full provider
+registry, environment variable conventions, and per-provider field
+references.
+
+---
+
 ## MCP (Model Context Protocol) Tools
 
 Assistant agents can be augmented with MCP tools, configured per-project and

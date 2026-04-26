@@ -679,17 +679,23 @@ async def chat_session_run(request, session_id):
             save_team_state,
         )
 
-        team, _, cache_miss = get_or_build_team(session_id, project)
-        if cache_miss:
-            saved_state = await asyncio.to_thread(services.get_agent_state, session_id)
-            if saved_state:
-                try:
-                    await load_team_state(team, saved_state)
-                except Exception:
-                    evict_team(session_id)
-                    await asyncio.to_thread(services.set_session_status, session_id, "stopped")
-                    yield _sse("error", {"message": "Unable to restart: state version mismatch."})
-                    return
+        try:
+            team, _, cache_miss = get_or_build_team(session_id, project)
+            if cache_miss:
+                saved_state = await asyncio.to_thread(services.get_agent_state, session_id)
+                if saved_state:
+                    try:
+                        await load_team_state(team, saved_state)
+                    except Exception:
+                        evict_team(session_id)
+                        await asyncio.to_thread(services.set_session_status, session_id, "stopped")
+                        yield _sse("error", {"message": "Unable to restart: state version mismatch."})
+                        return
+        except Exception as exc:
+            await asyncio.to_thread(services.set_session_status, session_id, "idle")
+            evict_team(session_id)
+            yield _sse("error", {"message": str(exc)})
+            return
 
         # Issue a fresh cancellation token for this run
         cancel_token = reset_cancel_token(session_id)

@@ -75,6 +75,26 @@ MCP (Model Context Protocol) tool wiring for assistant agents.
 - Deployment changes → update `deployments/README.md` and the relevant
   per-topology README.
 
+### Model capability prerequisite (`function_calling`)
+
+- Any agent with `mcp_tools` ∈ {`shared`, `dedicated`} forwards tools to the
+  model client. The model's resolved `model_info.function_calling` MUST be
+  `true`, otherwise AutoGen raises
+  `ValueError: Model does not support function calling`.
+- For Azure OpenAI, Azure Anthropic, and Google Gemini providers,
+  `model_info` is **always** injected by `agents/factory.py`, so the
+  `agent_models.json` entry MUST declare `"function_calling": true`
+  explicitly. The factory default is `false`.
+- For direct `openai` / `anthropic` providers, AutoGen auto-detects known
+  model names; declare `model_info` explicitly only for unrecognized model
+  identifiers.
+- When introducing a new model that should be MCP-capable, update both
+  [`agent_models.json`](../../agent_models.json) and the README "Models &
+  `model_info`" section if a new family/provider example is added.
+- Models that genuinely lack tool calling (reasoning-only, audio, embedding)
+  must be paired only with agents whose `mcp_tools = "none"`. Never set
+  `function_calling: true` on a model that cannot honor it.
+
 ## Anti-patterns (block in review)
 
 - Using `print()` or logging server entries directly.
