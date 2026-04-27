@@ -662,6 +662,22 @@ def set_session_status(session_id, status):
     col.update_one({"_id": oid}, update)
 
 
+@traced_function("service.chat.try_set_running")
+def try_set_session_running(session_id):
+    """Atomically set status to running only from idle/awaiting_input."""
+    try:
+        oid = ObjectId(session_id)
+    except (InvalidId, TypeError):
+        return False
+
+    col = get_collection(CHAT_SESSIONS_COLLECTION)
+    result = col.update_one(
+        {"_id": oid, "status": {"$in": ["idle", "awaiting_input"]}},
+        {"$set": {"status": "running"}},
+    )
+    return result.modified_count == 1
+
+
 @traced_function("service.chat.append_messages")
 def append_messages(session_id, messages):
     """Append a list of message dicts to session discussions."""

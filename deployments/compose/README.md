@@ -32,6 +32,9 @@ docker compose -f deployments/compose/docker-compose.yml up --build
 
 App will be on http://localhost:8000, MCP gateway on http://localhost:9000.
 
+Redis is started by default at `redis://redis:6379/0` and is required for
+active-session run coordination (distributed lease + cancel signaling).
+
 ## With a local Mongo (dev only)
 
 ```powershell
@@ -63,4 +66,5 @@ To attach an MCP server to an assistant in the app:
 ## Required environment variables
 
 See [../standalone/README.md](../standalone/README.md) for the canonical list
-of app env vars. All apply identically here.
+of app env vars. All apply identically here, including the Redis variables
+used by active session coordination.

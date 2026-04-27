@@ -142,6 +142,13 @@ The default example is stored in `server/model_catalog.SELECTOR_AGENT_PROMPT` an
 
 Teams are kept alive in a process-local dict (`_TEAM_CACHE`) keyed by `session_id`. This preserves AutoGen's internal conversation history between rounds in human-gated runs.
 
+Active run ownership is coordinated through Redis (`agents/session_coordination.py`):
+
+- One active run lease per `session_id`.
+- Lease heartbeat renewal while SSE streaming is active.
+- Cross-instance cancel signal used by `/chat/sessions/<id>/stop/`.
+- Run start is fail-fast when Redis is unavailable.
+
 The runtime also persists native AutoGen team state to `chat_sessions.agent_state` using:
 
 - `await team.save_state()` at run checkpoints
@@ -167,6 +174,9 @@ session_id → CancellationToken
 - **Cache hit**: Existing team is reused with its accumulated history intact.
 - **Server restart**: Cache is lost. If persisted `agent_state` exists, the team is rebuilt and `load_state()` restores it.
 - **State mismatch**: If `load_state()` fails due to schema/version drift, restart is rejected with an explicit "state version mismatch" error (no fallback rebuild path).
+
+Redis coordination keys are ephemeral and are not used for resume state.
+Durable resume data always comes from MongoDB `chat_sessions.agent_state`.
 
 ---
 

@@ -22,3 +22,14 @@ Three supported topologies. Pick the one that matches your hosting target.
 The chart and compose files never package a production Mongo. Provide a
 managed cluster via `MONGODB_URI`. A local-only Mongo container is available
 in compose under `--profile local-mongo` for development convenience.
+
+## Redis active-session coordination
+
+Active chat session execution uses Redis for distributed run coordination
+(single active lease per `session_id`, heartbeat renewal, cross-instance
+cancel signaling). MongoDB remains the durable source for persisted
+`agent_state` and discussion history.
+
+- `REDIS_URI` is required in production deployments.
+- Run start is fail-fast when Redis is unavailable.
+- Compose includes a local Redis service by default for developer use.

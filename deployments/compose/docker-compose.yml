@@ -16,10 +16,22 @@ services:
       # Default to internal mongo if local-mongo profile is active; user can override.
       MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017}
       MONGODB_NAME: ${MONGODB_NAME:-product_discovery}
+      REDIS_URI: ${REDIS_URI:-redis://redis:6379/0}
+      REDIS_NAMESPACE: ${REDIS_NAMESPACE:-product_discovery}
     ports:
       - "8000:8000"
     depends_on:
       - mcp-gateway
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
     restart: unless-stopped
 
   mcp-gateway:
@@ -52,3 +64,4 @@ services:
 
 volumes:
   mongo-data:
+  redis-data:

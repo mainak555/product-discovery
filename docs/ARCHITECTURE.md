@@ -86,6 +86,8 @@ Deletion policy:
 - `agents/factory.py` resolves provider-specific AutoGen model clients from model names.
 - `agents/prompt_builder.py` resolves system prompts and appends the project objective.
 - `agents/team_builder.py` builds AutoGen teams (`RoundRobinGroupChat` or `SelectorGroupChat`) from saved configuration. The team type is read from `project["team"]["type"]`. Each `AssistantAgent` receives `description=` (line 1 of its resolved system message) so that `SelectorGroupChat`'s `{roles}` placeholder renders meaningful routing context.
+- `agents/runtime.py` owns process-local team/cache lifecycle and MCP workbench teardown.
+- `agents/session_coordination.py` owns Redis-backed active-session coordination (run lease, heartbeat, cross-instance cancel signaling).
 
 ### Root `core/` Package — Shared Infrastructure
 - `core/tracing.py` owns OpenTelemetry setup and helpers (`init_tracing`,
@@ -110,6 +112,7 @@ See [docs/agent_factory.md](agent_factory.md) for the full `agent_models.json` s
 - **Provider secrets**: API keys are read from env only — `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `AZURE_OPENAI_API_KEY`, `AZURE_ANTHROPIC_API_KEY`.
 - **Provider endpoints**: Azure endpoint URLs are stored per-model in `agent_models.json` under the `endpoint` field. No endpoint env var is used; each Azure resource has its own URL.
 - **No Django ORM**: `DATABASES = {}`. Sessions use signed cookies.
+- **Runtime state split**: Redis coordinates active running sessions; MongoDB persists durable discussion and `agent_state` resume data.
 - **Secret key auth**: GET/POST HTMX requests can carry `X-App-Secret-Key`; invalid or missing keys get read-only views or rejected saves.
 - **Model catalog**: `agent_models.json` is keyed by model name; Azure deployments use the optional `deployment_name` field (defaults to model key). See [docs/agent_factory.md](agent_factory.md) for schema details.
 - **SCSS**: Compiled at request time in dev, offline in production.
@@ -153,6 +156,7 @@ Repo-local extension skills live under `.agents/skills/`.
 - `.agents/skills/markdown_viewer_reuse/SKILL.md` — shared markdown rendering across Home, export modals, and future providers.
 - `.agents/skills/ui_consistency_guardrails/SKILL.md` — cross-page visual consistency requirements.
 - `.agents/skills/scss_style_consistency/SKILL.md` — token-only SCSS and shared component style consistency requirements.
+- `.agents/skills/active_session_coordination/SKILL.md` — Redis lease/heartbeat/cancel and Mongo resume-state contract for chat run lifecycle changes.
 
 ## Integration Docs
 

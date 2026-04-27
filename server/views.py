@@ -9,6 +9,7 @@ Each view:
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -19,6 +20,9 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from . import services
+
+
+logger = logging.getLogger(__name__)
 
 
 SUPPORTED_EXPORT_PROVIDERS = ("trello", "jira", "pdf", "n8n")
@@ -662,7 +666,55 @@ async def chat_session_run(request, session_id):
     if is_first_run and not task:
         return _json_error("'task' is required to start a conversation.", 400)
 
-    await asyncio.to_thread(services.set_session_status, session_id, "running")
+    from agents.session_coordination import (
+        SessionCoordinationError,
+        acquire_run_lease,
+        clear_cancel_signal,
+        ensure_redis_available,
+        get_heartbeat_interval_seconds,
+        get_instance_id,
+        is_cancel_signaled,
+        release_run_lease,
+        renew_run_lease,
+    )
+
+    owner_id = get_instance_id()
+
+    redis_ok = await asyncio.to_thread(ensure_redis_available)
+    if not redis_ok:
+        return _json_error("Active session coordinator is unavailable.", 503)
+
+    try:
+        acquired = await asyncio.to_thread(acquire_run_lease, session_id, owner_id)
+    except SessionCoordinationError:
+        logger.exception(
+            "agents.session.redis_unavailable",
+            extra={"session_id": session_id, "phase": "acquire_lease"},
+        )
+        return _json_error("Active session coordinator is unavailable.", 503)
+
+    if not acquired:
+        return _json_error("Session is already running on another worker.", 409)
+
+    try:
+        await asyncio.to_thread(clear_cancel_signal, session_id)
+        moved_to_running = await asyncio.to_thread(services.try_set_session_running, session_id)
+        if not moved_to_running:
+            try:
+                await asyncio.to_thread(release_run_lease, session_id, owner_id)
+            except SessionCoordinationError:
+                logger.exception(
+                    "agents.session.redis_unavailable",
+                    extra={"session_id": session_id, "phase": "release_conflict"},
+                )
+            return _json_error("Session status changed before run start.", 409)
+    except SessionCoordinationError:
+        await asyncio.to_thread(release_run_lease, session_id, owner_id)
+        logger.exception(
+            "agents.session.redis_unavailable",
+            extra={"session_id": session_id, "phase": "prepare_run"},
+        )
+        return _json_error("Active session coordinator is unavailable.", 503)
 
     async def event_stream():
         from autogen_agentchat.base import TaskResult
@@ -675,127 +727,188 @@ async def chat_session_run(request, session_id):
             save_team_state,
         )
 
-        try:
-            team, _, cache_miss = get_or_build_team(session_id, project)
-            if cache_miss:
-                saved_state = await asyncio.to_thread(services.get_agent_state, session_id)
-                if saved_state:
-                    try:
-                        await load_team_state(team, saved_state)
-                    except Exception:
-                        evict_team(session_id)
-                        await asyncio.to_thread(services.set_session_status, session_id, "stopped")
-                        yield _sse("error", {"message": "Unable to restart: state version mismatch."})
-                        return
-        except Exception as exc:
-            await asyncio.to_thread(services.set_session_status, session_id, "idle")
-            evict_team(session_id)
-            yield _sse("error", {"message": str(exc)})
-            return
+        heartbeat_stop = asyncio.Event()
+        heartbeat_task = None
+        lease_lost = False
 
-        # Issue a fresh cancellation token for this run
-        cancel_token = reset_cancel_token(session_id)
+        async def _lease_heartbeat(cancel_token):
+            nonlocal lease_lost
+            interval_s = get_heartbeat_interval_seconds()
+            while True:
+                try:
+                    await asyncio.wait_for(heartbeat_stop.wait(), timeout=interval_s)
+                    return
+                except asyncio.TimeoutError:
+                    pass
 
-        has_gate = project.get("human_gate", {}).get("enabled", False)
-        max_iter = project.get("team", {}).get("max_iterations", 5)
+                try:
+                    renewed = await asyncio.to_thread(renew_run_lease, session_id, owner_id)
+                except SessionCoordinationError:
+                    lease_lost = True
+                    cancel_token.cancel()
+                    return
 
-        # Export integration metadata for client-side export actions.
-        export_meta = _build_export_meta(project)
-
-        pending_messages = []
-
-        async def checkpoint_state() -> None:
-            state = await save_team_state(team)
-            await asyncio.to_thread(services.save_agent_state, session_id, state)
-
-        # Persist the human's message (initial task or gate notes) to discussions.
-        if task:
-            human_name = project.get("human_gate", {}).get("name") or "You"
-            pending_messages.append({
-                "id": str(uuid4()),
-                "agent_name": human_name,
-                "role": "user",
-                "content": task,
-                "timestamp": datetime.now(timezone.utc),  # BSON Date in MongoDB
-            })
+                if not renewed:
+                    lease_lost = True
+                    cancel_token.cancel()
+                    return
 
         try:
-            async for msg in team.run_stream(
-                task=task if task else None,
-                cancellation_token=cancel_token,
-            ):
-                if isinstance(msg, TaskResult):
-                    # Persist accumulated messages
-                    if pending_messages:
-                        await asyncio.to_thread(services.append_messages, session_id, pending_messages)
-                        pending_messages = []
-
-                    await checkpoint_state()
-
-                    # Re-fetch to get current_round after potential $inc
-                    updated = await asyncio.to_thread(services.get_chat_session, session_id)
-                    current_round = updated["current_round"] if updated else 0
-
-                    if has_gate and current_round < max_iter:
-                        await asyncio.to_thread(services.set_session_status, session_id, "awaiting_input")
-                        gate_data = {
-                            "round": current_round + 1,
-                            "max_rounds": max_iter,
-                            "human_name": project["human_gate"]["name"],
-                        }
-                        if export_meta:
-                            gate_data["export"] = export_meta
-                        yield _sse("gate", gate_data)
-                    else:
-                        await asyncio.to_thread(services.set_session_status, session_id, "completed")
-                        evict_team(session_id)
-                        done_data = {"status": "completed", "round": current_round}
-                        if export_meta:
-                            done_data["export"] = export_meta
-                        yield _sse("done", done_data)
-
-                elif isinstance(msg, TextMessage) and msg.source != "user":
-                    ts_dt = datetime.now(timezone.utc)  # BSON Date for MongoDB
-                    ts_iso = ts_dt.isoformat()           # ISO string for SSE JSON
-                    record = {
-                        "id": str(uuid4()),
-                        "agent_name": msg.source,
-                        "role": "assistant",
-                        "content": msg.content,
-                        "timestamp": ts_dt,
-                    }
-                    pending_messages.append(record)
-                    sse_record = dict(record)
-                    sse_record["timestamp"] = ts_iso
-                    # Attach export info for the client to decide button rendering
-                    if export_meta:
-                        sse_record["export"] = export_meta
-                    yield _sse("message", sse_record)
-
-        except asyncio.CancelledError:
-            if pending_messages:
-                await asyncio.to_thread(services.append_messages, session_id, pending_messages)
             try:
-                await checkpoint_state()
-            except Exception:
-                # Stop should still succeed even if persistence fails here.
-                pass
-            await asyncio.to_thread(services.set_session_status, session_id, "stopped")
-            evict_team(session_id)
-            yield _sse("stopped", {"status": "stopped"})
-
-        except Exception as exc:
-            await asyncio.to_thread(services.set_session_status, session_id, "idle")
-            evict_team(session_id)
-            yield _sse("error", {"message": str(exc)})
-
-        finally:
-            # Guard: if session is still "running" (e.g. client disconnected mid-stream),
-            # reset to "idle" so it can be re-run.
-            stuck = await asyncio.to_thread(services.get_chat_session, session_id)
-            if stuck and stuck["status"] == "running":
+                team, _, cache_miss = get_or_build_team(session_id, project)
+                if cache_miss:
+                    saved_state = await asyncio.to_thread(services.get_agent_state, session_id)
+                    if saved_state:
+                        try:
+                            await load_team_state(team, saved_state)
+                        except Exception:
+                            evict_team(session_id)
+                            await asyncio.to_thread(services.set_session_status, session_id, "stopped")
+                            yield _sse("error", {"message": "Unable to restart: state version mismatch."})
+                            return
+            except Exception as exc:
                 await asyncio.to_thread(services.set_session_status, session_id, "idle")
                 evict_team(session_id)
+                yield _sse("error", {"message": str(exc)})
+                return
+
+            # Issue a fresh cancellation token for this run
+            cancel_token = reset_cancel_token(session_id)
+
+            has_gate = project.get("human_gate", {}).get("enabled", False)
+            max_iter = project.get("team", {}).get("max_iterations", 5)
+
+            # Export integration metadata for client-side export actions.
+            export_meta = _build_export_meta(project)
+
+            pending_messages = []
+
+            async def checkpoint_state() -> None:
+                state = await save_team_state(team)
+                await asyncio.to_thread(services.save_agent_state, session_id, state)
+
+            # Persist the human's message (initial task or gate notes) to discussions.
+            if task:
+                human_name = project.get("human_gate", {}).get("name") or "You"
+                pending_messages.append({
+                    "id": str(uuid4()),
+                    "agent_name": human_name,
+                    "role": "user",
+                    "content": task,
+                    "timestamp": datetime.now(timezone.utc),  # BSON Date in MongoDB
+                })
+
+            heartbeat_task = asyncio.create_task(_lease_heartbeat(cancel_token))
+
+            try:
+                async for msg in team.run_stream(
+                    task=task if task else None,
+                    cancellation_token=cancel_token,
+                ):
+                    try:
+                        if await asyncio.to_thread(is_cancel_signaled, session_id):
+                            cancel_token.cancel()
+                    except SessionCoordinationError:
+                        lease_lost = True
+                        cancel_token.cancel()
+
+                    if isinstance(msg, TaskResult):
+                        # Persist accumulated messages
+                        if pending_messages:
+                            await asyncio.to_thread(services.append_messages, session_id, pending_messages)
+                            pending_messages = []
+
+                        await checkpoint_state()
+
+                        # Re-fetch to get current_round after potential $inc
+                        updated = await asyncio.to_thread(services.get_chat_session, session_id)
+                        current_round = updated["current_round"] if updated else 0
+
+                        if has_gate and current_round < max_iter:
+                            await asyncio.to_thread(services.set_session_status, session_id, "awaiting_input")
+                            gate_data = {
+                                "round": current_round + 1,
+                                "max_rounds": max_iter,
+                                "human_name": project["human_gate"]["name"],
+                            }
+                            if export_meta:
+                                gate_data["export"] = export_meta
+                            yield _sse("gate", gate_data)
+                        else:
+                            await asyncio.to_thread(services.set_session_status, session_id, "completed")
+                            evict_team(session_id)
+                            done_data = {"status": "completed", "round": current_round}
+                            if export_meta:
+                                done_data["export"] = export_meta
+                            yield _sse("done", done_data)
+
+                    elif isinstance(msg, TextMessage) and msg.source != "user":
+                        ts_dt = datetime.now(timezone.utc)  # BSON Date for MongoDB
+                        ts_iso = ts_dt.isoformat()           # ISO string for SSE JSON
+                        record = {
+                            "id": str(uuid4()),
+                            "agent_name": msg.source,
+                            "role": "assistant",
+                            "content": msg.content,
+                            "timestamp": ts_dt,
+                        }
+                        pending_messages.append(record)
+                        sse_record = dict(record)
+                        sse_record["timestamp"] = ts_iso
+                        # Attach export info for the client to decide button rendering
+                        if export_meta:
+                            sse_record["export"] = export_meta
+                        yield _sse("message", sse_record)
+
+            except asyncio.CancelledError:
+                if pending_messages:
+                    await asyncio.to_thread(services.append_messages, session_id, pending_messages)
+                try:
+                    await checkpoint_state()
+                except Exception:
+                    # Stop should still succeed even if persistence fails here.
+                    pass
+                await asyncio.to_thread(services.set_session_status, session_id, "stopped")
+                evict_team(session_id)
+                if lease_lost:
+                    yield _sse("error", {"message": "Run lease lost; session stopped."})
+                else:
+                    yield _sse("stopped", {"status": "stopped"})
+
+            except Exception as exc:
+                await asyncio.to_thread(services.set_session_status, session_id, "idle")
+                evict_team(session_id)
+                yield _sse("error", {"message": str(exc)})
+
+            finally:
+                heartbeat_stop.set()
+                if heartbeat_task:
+                    try:
+                        await heartbeat_task
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                # Guard: if session is still "running" (e.g. client disconnected mid-stream),
+                # reset to "idle" so it can be re-run.
+                stuck = await asyncio.to_thread(services.get_chat_session, session_id)
+                if stuck and stuck["status"] == "running":
+                    await asyncio.to_thread(services.set_session_status, session_id, "idle")
+                    evict_team(session_id)
+        finally:
+            try:
+                await asyncio.to_thread(release_run_lease, session_id, owner_id)
+            except SessionCoordinationError:
+                logger.exception(
+                    "agents.session.redis_unavailable",
+                    extra={"session_id": session_id, "phase": "release_lease"},
+                )
+            try:
+                await asyncio.to_thread(clear_cancel_signal, session_id)
+            except SessionCoordinationError:
+                logger.exception(
+                    "agents.session.redis_unavailable",
+                    extra={"session_id": session_id, "phase": "clear_cancel"},
+                )
 
     response = StreamingHttpResponse(
         event_stream(),
@@ -905,6 +1018,20 @@ def chat_session_stop(request, session_id):
     """
     if not _has_valid_secret(request):
         return _json_error("Unauthorized", 403)
+
+    from agents.session_coordination import SessionCoordinationError, ensure_redis_available, signal_cancel
+
+    if not ensure_redis_available():
+        return _json_error("Active session coordinator is unavailable.", 503)
+
+    try:
+        signal_cancel(session_id)
+    except SessionCoordinationError:
+        logger.exception(
+            "agents.session.redis_unavailable",
+            extra={"session_id": session_id, "phase": "signal_cancel"},
+        )
+        return _json_error("Active session coordinator is unavailable.", 503)
 
     from agents.runtime import cancel_team
     cancel_team(session_id)

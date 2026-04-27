@@ -21,11 +21,16 @@ ingress:
 
 env:
   LOG_LEVEL: "INFO"
+  REDIS_NAMESPACE: "product_discovery"
+  REDIS_RUN_LEASE_TTL_SECONDS: "300"
+  REDIS_RUN_HEARTBEAT_SECONDS: "20"
+  REDIS_CANCEL_SIGNAL_TTL_SECONDS: "120"
 
 secretEnv:
   APP_SECRET_KEY: "change-me"
   MONGODB_URI: "mongodb+srv://user:pass@cluster.example.com/?retryWrites=true&w=majority"
   MONGODB_NAME: "product_discovery"
+  REDIS_URI: "redis://redis-master.redis.svc.cluster.local:6379/0"
   OPENAI_API_KEY: "sk-..."
   LANGFUSE_PUBLIC_KEY: "pk-..."
   LANGFUSE_SECRET_KEY: "sk-..."

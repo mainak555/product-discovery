@@ -41,6 +41,15 @@ APP_SECRET_KEY = os.getenv("APP_SECRET_KEY", "")
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 MONGODB_NAME = os.getenv("MONGODB_NAME", "product_discovery")
 
+# Redis session coordination (active run lease/cancel signaling)
+REDIS_URI = os.getenv("REDIS_URI", "redis://localhost:6379/0")
+REDIS_NAMESPACE = os.getenv("REDIS_NAMESPACE", "product_discovery")
+REDIS_SOCKET_TIMEOUT = float(os.getenv("REDIS_SOCKET_TIMEOUT", "2.0"))
+REDIS_SOCKET_CONNECT_TIMEOUT = float(os.getenv("REDIS_SOCKET_CONNECT_TIMEOUT", "2.0"))
+REDIS_RUN_LEASE_TTL_SECONDS = int(os.getenv("REDIS_RUN_LEASE_TTL_SECONDS", "300"))
+REDIS_RUN_HEARTBEAT_SECONDS = int(os.getenv("REDIS_RUN_HEARTBEAT_SECONDS", "20"))
+REDIS_CANCEL_SIGNAL_TTL_SECONDS = int(os.getenv("REDIS_CANCEL_SIGNAL_TTL_SECONDS", "120"))
+
 # ---------------------------------------------------------------------------
 # Application definition
 # ---------------------------------------------------------------------------

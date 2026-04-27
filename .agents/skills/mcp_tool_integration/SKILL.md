@@ -42,6 +42,12 @@ MCP (Model Context Protocol) tool wiring for assistant agents.
 - Workbenches are passed to `AssistantAgent(workbench=...)`.
 - `agents/runtime.py::evict_team()` MUST call
   `close_session_workbenches(session_id)`.
+- Active run exclusivity/cancel across multiple workers is coordinated by
+  `agents/session_coordination.py` (Redis lease + heartbeat + cancel signal).
+  Redis stores only ephemeral coordination state; MongoDB remains durable for
+  `chat_sessions.agent_state` resume checkpoints.
+- Run start paths must be fail-fast when Redis is unavailable (do not silently
+  degrade to in-process-only coordination).
 
 ### Layering
 

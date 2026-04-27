@@ -17,7 +17,7 @@ All routes are under the `server` app namespace.
 | `POST` | `/projects/<project_id>/clone/` | `project_clone` | Clone project as `<name> - Copy` |
 | `GET` | `/chat/sessions/` | `chat_session_list` | List chat sessions for a project (HTMX partial) |
 | `POST` | `/chat/sessions/create/` | `chat_session_create` | Create a chat session |
-| `POST` | `/chat/sessions/<session_id>/run/` | `chat_session_run` | Start or continue a run (SSE stream) |
+| `POST` | `/chat/sessions/<session_id>/run/` | `chat_session_run` | Start or continue a run (SSE stream; Redis-coordinated active lease) |
 | `POST` | `/chat/sessions/<session_id>/restart/` | `chat_session_restart` | Restart from persisted AutoGen team state |
 | `POST` | `/chat/sessions/<session_id>/respond/` | `chat_session_respond` | Human gate decision (continue/stop with optional notes) |
 | `POST` | `/chat/sessions/<session_id>/stop/` | `chat_session_stop` | Stop an in-progress run |
@@ -204,3 +204,13 @@ Human gate response endpoint contract:
 - Behavior:
   - `continue`: sets session status to `idle` and returns `{status:"ok", task:"<text>"}`
   - `stop`: sets session status to `stopped`, evicts the runtime team, returns `{status:"stopped"}`
+
+Active run coordination contract:
+
+- `POST /chat/sessions/<session_id>/run/` acquires a Redis lease keyed by
+  `session_id` before transitioning to `running`.
+- Returns `409` when another worker already owns the active run lease.
+- Returns `503` when Redis coordination is unavailable (fail-fast; no run start).
+- `POST /chat/sessions/<session_id>/stop/` writes a Redis cancel signal so
+  cancellation propagates across workers/pods.
+- MongoDB remains the durable source for `discussions` and `agent_state`.

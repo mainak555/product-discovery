@@ -33,6 +33,9 @@ helm install discovery deployments/k8s/helm/product-discovery `
 
 - **Mongo**: this chart never installs Mongo. Provide a connection string via
   `secretEnv.MONGODB_URI` (rendered into a Secret) or via `existingSecret`.
+- **Redis**: this chart does not install Redis. Provide `secretEnv.REDIS_URI`
+  (managed Redis recommended) because active run coordination is fail-fast
+  when Redis is unavailable.
 - **Container images**: build and push:
   - app image (`deployments/compose/Dockerfile.app` or
     `deployments/standalone/Dockerfile`) → `image.repository:tag`

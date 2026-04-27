@@ -50,6 +50,23 @@ is used for every gated pause.
 
 ---
 
+## Active Session Coordination (Redis)
+
+Active chat runs are coordinated through Redis by `session_id` while the run is
+in progress:
+
+- Exactly one worker can hold the active run lease for a session.
+- A heartbeat renews the lease while streaming.
+- `/chat/sessions/<id>/stop/` sets a Redis cancel signal so cancellation works
+	across containers/pods.
+- If Redis is unavailable, run start fails fast and does not transition the
+	session into `running`.
+
+MongoDB remains the durable source of truth for discussion history and
+persisted AutoGen team resume state (`chat_sessions.agent_state`).
+
+---
+
 ## Docker
 
 The repository ships three deployment topologies under `deployments/`:
@@ -239,6 +256,11 @@ Full documentation: [docs/mcp_integration.md](docs/mcp_integration.md).
 | `APP_SECRET_KEY` | Admin password for write access | *(required)* |
 | `MONGODB_URI` | MongoDB connection string | `mongodb://localhost:27017` |
 | `MONGODB_NAME` | MongoDB database name | `product_discovery` |
+| `REDIS_URI` | Redis connection string used for active run coordination | `redis://localhost:6379/0` |
+| `REDIS_NAMESPACE` | Redis key namespace prefix | `product_discovery` |
+| `REDIS_RUN_LEASE_TTL_SECONDS` | Active run lease TTL (seconds) | `300` |
+| `REDIS_RUN_HEARTBEAT_SECONDS` | Lease heartbeat interval (seconds) | `20` |
+| `REDIS_CANCEL_SIGNAL_TTL_SECONDS` | Cancel signal TTL (seconds) | `120` |
 | `DEBUG` | Django debug mode | `True` |
 | `ALLOWED_HOSTS` | Comma-separated allowed hosts | `localhost,127.0.0.1` |
 | `LOG_LEVEL` | Console log level (`DEBUG`/`INFO`/`WARNING`/`ERROR`). `DEBUG` upgrades `OTEL_CONSOLE_EXPORTER` default to `all`. | `INFO` |
@@ -262,6 +284,14 @@ Full documentation: [docs/mcp_integration.md](docs/mcp_integration.md).
 | `AZURE_OPENAI_API_URL` | Endpoint fallback for `azure_openai` models when `endpoint` is omitted in `agent_models.json` | *(required if JSON `endpoint` is missing)* |
 | `AZURE_ANTHROPIC_API_KEY` | API key for Azure AI Foundry Anthropic deployments | *(required for `azure_anthropic` models)* |
 | `AZURE_ANTHROPIC_API_URL` | Endpoint fallback for `azure_anthropic` models when `endpoint` is omitted in `agent_models.json` | *(required if JSON `endpoint` is missing)* |
+
+Redis URI examples:
+
+- ACL username + password:
+	- `REDIS_URI=redis://REDIS_USER:REDIS_PASS@REDIS_HOST:REDIS_PORT/REDIS_DB`
+	- Example with db `0`: `REDIS_URI=redis://user:password@REDIS_HOST:REDIS_PORT/0`
+- Password-only auth (older/default setup, no username):
+	- `REDIS_URI=redis://:password@REDIS_HOST:REDIS_PORT/0`
 
 ---
 

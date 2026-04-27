@@ -166,6 +166,12 @@ upstream by the MCP project. Use `transport: "http"` (Streamable HTTP) instead.
 
 ## Runtime wiring
 
+Active session run exclusivity/cancellation is coordinated by
+`agents/session_coordination.py` (Redis lease + heartbeat + cancel signal).
+This coordination layer is independent of MCP server wiring: Redis tracks only
+ephemeral run ownership, while durable conversation state and `agent_state`
+resume checkpoints remain in MongoDB.
+
 Order of operations in `agents/team_builder.py::build_team()`:
 
 1. For each agent, `build_agent_runtime_spec(agent_cfg, project, objective)`
